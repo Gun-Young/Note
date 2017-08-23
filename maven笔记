@@ -1,0 +1,16 @@
+一、下载及配置
+    去apache官网下载maven,将maven的bin目录配置到系统环境变量path中
+    
+二、配置本地仓库
+
+    1.解压下载的apache-maven-x.x.x-bin.zip到本地磁盘
+
+    2.配置本地仓库（让maven程序知道仓库在哪）
+     
+      打开maven/conf/settings.xml,修改<localRepository>本地磁盘的目录</localRespository>
+
+     （maven项目寻找jar包的过程： maven项目首先会寻找本地仓库，如果本地仓库查找不到jar包，会去中央仓库去寻找并下载所需jar包）
+      
+     
+        
+        
