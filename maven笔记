@@ -12,5 +12,166 @@
      （maven项目寻找jar包的过程： maven项目首先会寻找本地仓库，如果本地仓库查找不到jar包，会去中央仓库去寻找并下载所需jar包）
       
      
+三、maven项目标准目录结构
+    
+   maven项目：
+   
+        1.src(一级目录)
+            1.1.main（二级目录）
+                1.1.1、java(三级目录)   Java代码
+                1.1.2、resources(三级目录)  放配置文件，例如ssh配置文件
+                1.1.3、webapp(三级目录)   相当于动态web工程中的webcontents,放置html,jsp,在WEB-INF目录下放web.xml
+
+            1.2.test（二级目录）
+                1.2.1、java(三级目录)  测试类
+                1.2.2、resources(三级目录)   一般不会放置配置文件
+
+        2.pom.xml项目核心配置文件(一级目录)
+
+四、maven的常用命令
+
+    4.1、 mvn clean:  清理编译的 *.class文件，即删除target目录 
+    4.2、 mvn compile:  将项目中的 *.java文件编译成 *.class文件
+    4.3、 mvn test:  单元测试，将项目跟目录下 src/test/java目录下的单元测试类都会执行。 单元测试类命名要求：xxxTest.java
+    4.4、 mvn package:  war包、jar包根据项目决定，生成的包会在target目录下。
+    4.5、 mvn install:  打包到本地仓库，本地多个项目共用一个jar包
+    
+    
+    
+五、eclipse配置maven
+
+    5.1、  配置eclipse中maven环境
+         
+         Windows------>preference------>Maven------>Installations 将下载的maven配置进来
+         
+    5.2、配置userSetting (让eclipse知道maven本地仓库位置)
+    
+         Window------->preference------->Maven------>UserSetting 选择下载的maven/conf/setting.xml
+         
+    5.3、构建索引（提高eclipse查找仓库中jar包的速度）
+    
+         window------>showview------>other------->Maven Respositories   在下方显示区右键Local Respositories/Rebuild index
+         
+         
+六、创建项目
+                      |------>Maven Project  创建普通maven项目或者父工程   | 
+    File----->new-----|                                                  |------->next----->选中Create a simple project----->next
+                      |------>Maven Module   创建子模块                   |
+                      
+    -------> 填写项目信息：
+    
+    Group Id: 一般公司域名倒叙
+    
+    Artifact Id: 项目名称
+    
+    version: 版本（SNAPSHOT--->测试版本、 RELEASES:正式版本）
+    
+    packaging:打包方式（jar--->java工程、 war---->web工程、 pom---->父工程）
+    
+    注意：
+    
+       @1、创建完成项目报错：没有web.xml
+            
+           解决办法：在webapp下新建 WEB-INF/web.xml
+           
+       @2、添加项目jdk编译插件
+           
+           解决办法： 在pom.xml文件中添加如下代码：
+           <!-- 修改编译版本JDK1.7 -->
+            <build>  
+             <plugins>  
+                <plugin>  
+                        <groupId>org.apache.maven.plugins</groupId>  
+                        <artifactId>maven-compiler-plugin</artifactId>  
+                        <version>3.0</version>  
+                        <configuration>  
+                           <source>1.7</source>  
+                           <target>1.7</target>  
+                        </configuration>  
+                </plugin>  
+              </plugins>  
+            </build>  
+            
+            
+        @3、设置完上述两步后，maven项目仍然报错：
+            
+            解决办法：右键项目/Maven/update Project
+            
+          
+七、查找依赖包
+   
+   7.1、 打开pom.xml文件
+   
+   7.2、 点击Dependencies窗口视图
+   
+   7.3、 点击add按钮
+   
+   7.4、 查找所需要的jar包（此时是在本地仓库中查找jar包，如果不存在，去远程仓库查找https://mvnrepository.com/）
+   
+八、依赖范围
+
+   添加依赖范围默认是compile,将范围设置成provided,会在编译时使用，运行部署到tomcat后不再需要。
+   
+   例如：servlet-api.jar依赖范围设置为compile，打包后包含servlet-api.jar,war包部署到tomcat后与tomcat中的servlet-api.jar冲突，导致运行失败
+   
+   解决办法：将servlet-api.jar依赖范围设置为provided,如下所示：
+   
+   <dependency>
+  		<groupId>javax.servlet</groupId>
+  		<artifactId>javax.servlet-api</artifactId>
+  		<version>3.0.1</version>
+  		<scope>provided</scope>
+  	</dependency>
+   
+   
+九、运行maven项目
+
+                             |-------->Maven build(maven命令历史记录)
+    右键项目----->Run AS----->|
+                             |-------->Maven build...(手动输入命令)
+                             
+     点击Maven build...，在Goals框输入tomcat:run 
+     
+     
+十、依赖冲突解决方案
+
+     传递依赖：A依赖B，B依赖C，B是A的直接依赖，C是A的传递依赖。
+     
+     1. Maven自己的调解原则
+       
+        1.1、 第一声明这优先原则，谁先定义就用谁的传递依赖
         
+        1.2、 路径近者优先，直接依赖级别高于传递依赖
         
+     2. 排除依赖
+
+       在Dependency Hierarchy视图，展开依赖包，在需要排除的jar包右键---->Exclude Maven Artifact,pom.xml文件中<dependencies>节点
+       
+       多出<exclusion>,即排除这个直接依赖中传递依赖的某个包。
+       
+     3.属性（统一管理版本，方便修改）
+     
+       <properties>
+                <!--节点名随便取-->
+                <spring.version>4.2.4.RELEASE</spring.version>
+                <hibernate.version>5.0.7.Final</hibernate.version>
+                <struts.version>2.3.24</struts.version>
+       </properties>
+
+       在下面引用的方法：  <version>${spring.version}</version>
+
+
+
+十一、Maven对项目进行拆分、聚合
+  
+     地址： http://blog.csdn.net/marvel__dead/article/details/72601172
+
+
+
+
+
+
+
+
+
+
