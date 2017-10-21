@@ -42,11 +42,36 @@
       boolean flag() {return true;}
 
 
-
-
-
-
-
+四、赋值
+   （1）基本数据类型赋值
+      a=4;
+      基本类型存储了实际的数值，而并非指向一个对象的引用，所以在为其赋值的时候，是直接将一个地方的内容赋值到了另一个地方。例如，对基本数据类型
+      使用a=b，那么b的内容就复制给a。若接着又修改了a，而b根本不会受这种修改的影响
+   （2） 对象赋值
+      对一个对象进行操作时，我们真正操作的是对对象的引用。所以倘若“将一个对象赋值给另一个对象”，实际是将“引用”从一个地方复制到另一个地方。这意味
+      着假若对对象使用c=d，那么c和d都指向原本只有d指向的那个对象
+      class Tank
+      {
+         int level;
+      }
+   
+     public class Assignment
+     {
+        Tank t1=new Tank();
+        Tank t2=new Tank();
+        t1.level=9;
+        t2.level=47;
+        //sop是system.out.println缩写
+        sop("1: t1.level:"+t1.level+", t2.level:"+t2.level);
+        t1=t2;
+        sop("2: t1.level:"+t1.level+", t2.level:"+t2.level);
+        t1.level=27;
+        sop("3: t1.level:"+t1.level+", t2.level:"+t2.level);
+     }
+     输出结果：
+    1: t1.level:9, t2.level:47
+    2: t1.level:47 t2.level:47
+    3: t1.level:27, t2.level:27
 
 
 
