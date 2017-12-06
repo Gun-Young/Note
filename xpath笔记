@@ -57,12 +57,21 @@
    //*               选取文档中的所有元素
    //title[@*]       选取所有带有属性的 title 元素。
  
+
+
+五、选取若干路径
+通过在路径表达式中使用"|"运算符，可以选取若干路径
+示例：
+路径表达式                            结果
+//book/title | //book/price        选取所有book元素的title和price元素
+//title | //price                  选取所有文档中的title和price元素
+/bookstore/book/title | //price    选取所有属于bookstore元素的book元素的title元素，以及文档中所有的price元素
+
  
  
  
- 
- 
- 
+ 六、教程详细地址
+ http://blog.csdn.net/chenweitang123/article/details/6255108
  
  
  
