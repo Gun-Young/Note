@@ -1,0 +1,44 @@
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+
+public class JdbcTest
+{
+    public static void main(String[] args) throws  Exception
+    {
+        Class.forName("oracle.jdbc.driver.OracleDriver");               //oracle驱动
+        String url = "jdbc:oracle:thin:@localhost:1521:ORCL";           //数据库的连接地址
+        String user = "system";                                         //连接用户名
+        String password = "yg7758521";                                  //连接密码
+
+        Connection con= DriverManager.getConnection(url,user,password);
+
+        if(con!=null)
+        {
+
+            String sql="select * from student";
+
+            PreparedStatement state= con.prepareStatement(sql);
+
+            ResultSet result = state.executeQuery();
+
+            while(result.next())
+            {
+                String num = result.getString("num");
+                String name = result.getString("name");
+                String sex = result.getString("sex");
+                String age = result.getString("age");
+                System.out.println("num:"+num+"    name:"+name+"   sex:"+sex+"   age:"+age);
+
+            }
+            result.close();
+
+            state.close();
+
+            con.close();
+            
+        }
+
+    }
+}
