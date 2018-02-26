@@ -1,0 +1,21 @@
+在开发中经常需要获取资源文件路径，例如读写配置文件等。java 也提供很多方法来获取这些路径
+
+1、 xxx.class.getClassLoader.getResource("").getPath();  
+获取src资源文件编译后的路径（即classes路径）
+
+2、xxx.class.getClassLoader.getResource("文件").getPath();
+获取classes路径下“文件”的路径
+
+
+3、xxx.class.getResource("").getPath();
+缺少类加载器，获取xxx类京编译后的xxx.class路径
+
+4、this.getClass.getClassLoader().getResource("").getPath();
+以上三种方法的另一种写法
+
+5、request().getSession().getServletContext().getRealPath("");
+获取web项目的路径
+
+
+
+
