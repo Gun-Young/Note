@@ -1,0 +1,30 @@
+文章地址：https://blog.csdn.net/maqingbin8888/article/details/81772025
+
+
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+ 
+@Transactional(readOnly = false,propagation=Propagation.REQUIRED)//开事物
+public void save(String name,Integer age ,BigDecimal amount){
+    Zexample1Model zexample1Model = new Zexample1Model();
+    zexample1Model.setName(name+"_");
+    zexample1Model.setAge(age);
+    zexample1Model.setAmount(amount);
+    zexample1Model.setAddTime(new Date());
+    zexample1Model.setStatus(1);
+    zexample1Dao.save(zexample1Model);
+    System.out.println("id="+zexample1Model.getId());
+        	
+        	
+    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+        //事务提交完成之后处理
+        @Override
+        public void afterCommit() {
+            System.out.println("send email after transaction commit...");
+        }
+    });
+    System.out.println("this method complete....");
+}
+
+
+
