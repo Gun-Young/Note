@@ -1,0 +1,102 @@
+原博文地址：https://www.cnblogs.com/likaitai/p/5431246.html
+
+
+
+一、为什么要用Http连接池
+
+1、降低延迟：如果不采用连接池，每次连接发起Http请求的时候都会重新建立TCP连接(经历3次握手)，用完就会关闭连接(4次挥手)，如果采用连接池则减少了这部分时间损耗，别小看这几次握手，本人经过测试发现，基本上3倍的时间延迟
+
+2、支持更大的并发：如果不采用连接池，每次连接都会打开一个端口，在大并发的情况下系统的端口资源很快就会被用完，导致无法建立新的连接
+
+二、代码
+
+1、HttpConnectionManager.java连接池管理类，支持https协议
+
+@Component
+
+public class HttpConnectionManager {
+
+    PoolingHttpClientConnectionManager cm = null;
+    
+    @PostConstruct
+    public void init() {
+        LayeredConnectionSocketFactory sslsf = null;
+        try {
+            sslsf = new SSLConnectionSocketFactory(SSLContext.getDefault());
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+
+        
+        Registry<ConnectionSocketFactory> socketFactoryRegistry = RegistryBuilder.<ConnectionSocketFactory> create()
+                .register("https", sslsf)
+                .register("http", new PlainConnectionSocketFactory())
+                .build();
+        cm =new PoolingHttpClientConnectionManager(socketFactoryRegistry);
+        cm.setMaxTotal(200);
+        cm.setDefaultMaxPerRoute(20);
+    }
+
+    public CloseableHttpClient getHttpClient() {       
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setConnectionManager(cm)
+                .build();          
+        
+        /*CloseableHttpClient httpClient = HttpClients.createDefault();//如果不采用连接池就是这种方式获取连接*/
+        return httpClient;
+    }
+}
+
+2、连接池消费类：HaoMaiClient.java
+
+@Component
+public class HaoMaiClient {
+    @Autowired
+    HttpConnectionManager connManager;
+    
+    public <T> T get(String path,Class<T> clazz){
+        CloseableHttpClient httpClient=connManager.getHttpClient();
+        HttpGet httpget = new HttpGet(path);
+        String json=null;        
+        CloseableHttpResponse response=null;
+        try {
+            response = httpClient.execute(httpget);
+            InputStream in=response.getEntity().getContent();
+            json=IOUtils.toString(in);
+            in.close();
+        } catch (UnsupportedOperationException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally {            
+            if(response!=null){
+            try {
+                response.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            }            
+        }                
+        return JSON.parseObject(json, clazz);
+    }
+
+}
+
+三、原理及注意事项
+
+连接池中连接都是在发起请求的时候建立，并且都是长连接
+
+HaoMaiClient.java中的in.close();作用就是将用完的连接释放，下次请求可以复用，这里特别注意的是，如果不使用in.close();而仅仅使用response.close();结果就是连接会被关闭，并且不能被复用，这样就失去了采用连接池的意义。
+
+连接池释放连接的时候，并不会直接对TCP连接的状态有任何改变，只是维护了两个Set，leased和avaliabled，leased代表被占用的连接集合，avaliabled代表可用的连接的集合，释放连接的时候仅仅是将连接从leased中remove掉了，并把连接放到avaliabled集合中
+
+
+
+
+
+
+
+
+
+
+
