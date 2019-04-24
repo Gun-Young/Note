@@ -1,0 +1,78 @@
+1.自定义annotation注解
+
+package com.example.yg.test2.firstDemo.annotationPackage;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.Target;
+
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
+@Target(ElementType.FIELD)  //注解用于什么地方
+@Retention(RUNTIME)         //什么时候使用注解 
+@Documented                 //注解是否将包含再JavaDoc中
+@Inherited                  //是否允许子类继承该注解
+public @interface FruitColor {
+    String color() default "red";
+}
+
+
+
+2.使用注解
+package com.example.yg.test2.firstDemo.annotationPackage;
+
+public class Apple {
+
+    private String name ;
+    @FruitColor(color = "black")    //在这里使用注解
+    private String color;
+
+    public Apple(){
+
+    }
+
+    public Apple(String name,String color){
+        this.name = name;
+        this.color = color;
+    }
+
+    public String fruitInfo(){
+        System.out.println("名称："+name + "....颜色："+color);
+        return name+":"+color;
+    }
+}
+
+
+
+
+3.测试获取注解的属性值
+package com.example.yg.test2.firstDemo.annotationPackage;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
+public class FruitTest {
+    public static void main(String[] args) throws Exception{
+        Class clazz = Class.forName("com.example.yg.test2.firstDemo.annotationPackage.Apple");
+        System.out.println(clazz);
+        Field[] fields = clazz.getDeclaredFields();
+        for(Field field : fields){
+            if(field.isAnnotationPresent(FruitColor.class)){  //如果存在该类型的注解，返回true
+               FruitColor fruitColor = field.getAnnotation(FruitColor.class);   //获取到注解
+               System.out.println(fruitColor.color());  //获取注解的属性值   ---color的值为black
+            }
+        }
+
+        Constructor constructor = clazz.getDeclaredConstructor(String.class,String.class);
+        Object object = constructor.newInstance("苹果","青涩");
+
+        Method method = clazz.getDeclaredMethod("fruitInfo");
+        method.invoke(object);
+    }
+}
+
+
+
+
+
+
