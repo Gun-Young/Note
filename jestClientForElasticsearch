@@ -1,0 +1,269 @@
+1. 配置jest客户端
+
+package com.es.estest.config;
+
+import io.searchbox.client.JestClient;
+import io.searchbox.client.JestClientFactory;
+import io.searchbox.client.config.HttpClientConfig;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class JestClientConf {
+
+    /**
+     * 获取jestclient
+     *
+     * @return
+     * @throws Exception
+     */
+    @Bean
+    public JestClient getJestClient() throws Exception {
+        JestClientFactory factory = new JestClientFactory();
+        factory.setHttpClientConfig(new HttpClientConfig.Builder("http://localhost:9200")
+                .multiThreaded(true).build());
+        return factory.getObject();
+    }
+}
+
+
+
+
+
+2.基本操作
+package com.es.estest.p1;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.es.estest.PersonVo;
+import io.searchbox.client.JestClient;
+import io.searchbox.client.JestResult;
+import io.searchbox.core.Bulk;
+import io.searchbox.core.Index;
+import io.searchbox.core.Search;
+import io.searchbox.core.SearchResult;
+import io.searchbox.indices.CreateIndex;
+import io.searchbox.indices.DeleteIndex;
+import io.searchbox.indices.mapping.PutMapping;
+import io.searchbox.params.SearchType;
+import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.aggregations.AbstractAggregationBuilder;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.sort.SortBuilder;
+import org.elasticsearch.search.sort.SortBuilders;
+import org.elasticsearch.search.sort.SortOrder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+@RestController
+@RequestMapping("/es")
+public class FirstEs {
+    @Autowired
+    private JestClient jestClient;
+
+
+    /**
+     * 创建索引
+     *
+     * @throws Exception
+     */
+    @RequestMapping("/createdIndex")
+    public void createdIndex() throws Exception {
+        //注意索引名称，支持下划线命名，不支持驼峰命名？
+        JestResult jestResult = jestClient.execute(new CreateIndex.Builder("first_jest_index").build());
+        System.out.println("创建索引结果：---->");
+        System.out.println(jestResult);
+    }
+
+    /**
+     * 删除索引
+     *
+     * @throws Exception
+     */
+    @RequestMapping(value = "/deleteIndex", method = RequestMethod.GET)
+    public void deleteIndex() throws Exception {
+        JestResult jestResult = jestClient.execute(new DeleteIndex.Builder("first_jest_index").build());
+        System.out.println("删除索引结果：---->");
+        System.out.println(jestResult);
+    }
+
+
+    /**
+     * 写入数据 (自动为字段创建类型)
+     *
+     * @throws Exception
+     */
+    @RequestMapping(value = "/insterData", method = RequestMethod.GET)
+    public void insterData() throws Exception {
+        List list = new ArrayList();
+        Map<String, Object> map1 = new HashMap();
+        map1.put("id", 1);
+        map1.put("name", "zhangsan");
+        map1.put("age", 19);
+        map1.put("sex", "nan");
+        map1.put("about", "i like pingpang");
+
+        Map<String, Object> map2 = new HashMap();
+        map2.put("id", 2);
+        map2.put("name", "lisi");
+        map2.put("age", 20);
+        map2.put("sex", "nv");
+        map2.put("about", "i like swming");
+
+        Map<String, Object> map3 = new HashMap();
+        map3.put("id", 3);
+        map3.put("name", "zhaoliu");
+        map3.put("age", 56);
+        map3.put("sex", "nv");
+        map3.put("about", "i like food");
+
+
+        Index action = new Index.Builder(map3).index("first_jest_index").type("first_type").build();
+        JestResult result = jestClient.execute(action);
+        System.out.println("插入结果-------->");
+        System.out.println(result);
+    }
+
+
+    /**
+     * 批量插入
+     *
+     * @throws Exception
+     */
+    @RequestMapping(value = "bulkInsertData", method = RequestMethod.GET)
+    public void bulkInsertData() throws Exception {
+        List dataList = new ArrayList();
+        Map<String, Object> map1 = new HashMap();
+        map1.put("id", 4);
+        map1.put("name", "tianqi");
+        map1.put("age", 36);
+        map1.put("sex", "nan");
+        map1.put("about", "i like chiji");
+
+        Map<String, Object> map2 = new HashMap();
+        map2.put("id", 5);
+        map2.put("name", "wangba");
+        map2.put("age", 40);
+        map2.put("sex", "nv");
+        map2.put("about", "i like jiayu");
+        dataList.add(map1);
+        dataList.add(map2);
+
+        List<Index> actions = new ArrayList<>();
+        dataList.forEach(item -> {
+            actions.add(new Index.Builder(item).build());
+        });
+
+        Bulk bulk = new Bulk.Builder().defaultIndex("first_jest_index")
+                .defaultType("first_type").addAction(actions).build();
+        JestResult result = jestClient.execute(bulk);
+        System.out.println("批量插入结果：------->");
+        System.out.println(result);
+    }
+
+
+    /**
+     * 查询
+     *
+     * @throws Exception
+     */
+    @RequestMapping("/search")
+    public void search() throws Exception {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.matchQuery("name", "zhangsan"));
+        Search search = new Search.Builder(searchSourceBuilder.toString()).addIndex("first_jest_index").addType("first_type").build();    //这里注意
+        SearchResult result = jestClient.execute(search);
+        List list = result.getHits(PersonVo.class);  //source里的属性根据PersonVo的属性进行返回
+        System.out.println(JSON.toJSONString(list));
+    }
+
+
+    /**
+     * 分页查询elasticsearch数据
+     *
+     * @throws Exception
+     */
+    @RequestMapping(value = "/searchByPage",method = RequestMethod.GET)
+    public void searchByPage() throws Exception {
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query();
+        sourceBuilder.from(0);  //起始位置
+        sourceBuilder.size(2);  //一页长度
+        sourceBuilder.timeout(new TimeValue(60, TimeUnit.SECONDS));  //超时时间
+        //sourceBuilder.sort(SortBuilders.fieldSort("name").order(SortOrder.DESC));  //排序
+        Search search = new Search.Builder(sourceBuilder.toString())
+                .addIndex("first_jest_index").addType("first_type")
+                .setSearchType(SearchType.DFS_QUERY_THEN_FETCH).build();
+        SearchResult result = jestClient.execute(search);
+        System.out.println("分页查询结果----->");
+        System.out.println(result);
+    }
+
+
+    /**
+     * 统计
+     *
+     * @throws Exception
+     */
+    @RequestMapping(value = "/statSearch",method = RequestMethod.GET)
+    public void statSearch() throws Exception{
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(QueryBuilders.matchAllQuery());
+        sourceBuilder.from(0);  //起始位置
+        sourceBuilder.size(2);  //一页长度
+        sourceBuilder.timeout(new TimeValue(60, TimeUnit.SECONDS));  //超时时间
+        sourceBuilder.aggregation(AggregationBuilders.terms("agg").field("age"));
+        //不需要source
+        sourceBuilder.fetchSource(false);
+        Search search = new Search.Builder(sourceBuilder.toString())
+                .addIndex("first_jest_index").addType("first_type")
+                .setSearchType(SearchType.DFS_QUERY_THEN_FETCH).build();
+        SearchResult result = jestClient.execute(search);
+        System.out.println("统计数据----->");
+        System.out.println(result);
+    }
+
+
+
+
+    /**
+     * 创建type
+     *
+     * @throws Exception
+     */
+    @RequestMapping(value = "createIndexType", method = RequestMethod.GET)
+    public void createIndexType() throws Exception {
+        //source参数是拼接好的json格式的mapping串,source怎么拼
+        PutMapping.Builder builder = new PutMapping.Builder("first_jest_index", "test_type", "");
+        JestResult jestResult = jestClient.execute(builder.build());
+        System.out.println("创建类型结果......>");
+        System.out.println(jestResult);
+    }
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
