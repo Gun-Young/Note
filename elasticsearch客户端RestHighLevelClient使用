@@ -1,0 +1,781 @@
+package com.vcredit.rc.admin.service.impl;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.vcredit.rc.admin.configs.EsIndexNamesConf;
+import com.vcredit.rc.admin.dao.rc.VbMapper;
+import com.vcredit.rc.admin.dao.rclog.CallParamMapper;
+import com.vcredit.rc.admin.dto.BaseRes;
+import com.vcredit.rc.admin.model.CallParam;
+import com.vcredit.rc.admin.service.BusinessService;
+import com.vcredit.rc.admin.utils.DateUtil;
+import com.vcredit.rc.admin.utils.EsClientManager;
+import kafka.utils.Json;
+import org.apache.commons.lang.StringUtils;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.BucketOrder;
+import org.elasticsearch.search.aggregations.bucket.MultiBucketsAggregation;
+import org.elasticsearch.search.aggregations.bucket.filter.Filter;
+import org.elasticsearch.search.aggregations.bucket.filter.FilterAggregationBuilder;
+import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramInterval;
+import org.elasticsearch.search.aggregations.bucket.histogram.Histogram;
+import org.elasticsearch.search.aggregations.bucket.range.Range;
+import org.elasticsearch.search.aggregations.bucket.terms.ParsedStringTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.cardinality.Cardinality;
+import org.elasticsearch.search.aggregations.metrics.cardinality.CardinalityAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.sum.Sum;
+import org.elasticsearch.search.aggregations.metrics.sum.SumAggregationBuilder;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+/**
+ * 业务分析模块
+ */
+@Service
+public class BusinessServiceImpl implements BusinessService {
+
+    @Autowired
+    private CallParamMapper callParamMapper;
+
+    @Autowired
+    private EsIndexNamesConf esIndexNamesConf;
+
+    private Logger logger = LoggerFactory.getLogger(getClass());
+
+    //保留位数
+    private static Integer DIGITS = 4;
+
+
+
+    @Autowired
+    private VbMapper vbMapper;
+
+    /**
+     * 获取所有的VB_NM
+     *
+     * @return
+     */
+    @Override
+    public List<Map<String, Object>> getAllVbName() {
+        return vbMapper.getAllVb();
+    }
+
+
+    /**
+     * 聚合分析
+     *
+     * @param param
+     * @return
+     */
+    @Override
+    public BaseRes analysis(JSONObject param) {
+        //预审
+        Map<String,String> YSMap = esIndexNamesConf.getYSMap();
+        //终审
+        Map<String,String> ZSMap = esIndexNamesConf.getZSMap();
+
+
+        //0.获取参数
+        JSONObject reqParam = param.getJSONObject("reqParam");
+        //索引名
+        String indexName = reqParam.getString("indexName");
+        //起始时间
+        String startTime = reqParam.getString("startTime");
+        //结束时间
+        String endTime = reqParam.getString("endTime");
+        //渠道类型
+        String channelTypeValue = reqParam.getString("channelTypeValue");
+        //渠道名
+//        String channelNameValue = reqParam.getString("channelNameValue");
+        JSONArray channelNameValueArr = reqParam.getJSONArray("channelNameValue");
+        //维度
+        String selectedDimension = reqParam.getString("selectedDimensions");
+        //维度类型
+        String selectedDimensionsType = reqParam.getString("selectedDimensionsType");
+        //时间类型
+        String timeTypeValue = reqParam.getString("timeTypeValue");
+        //指标
+        String targetValue = reqParam.getString("targetValue");
+        //分组
+        String blockSort = reqParam.getString("blockSort");
+        String callType = reqParam.getString("callType");
+
+        //todo 参数校验
+
+
+        RestHighLevelClient client = EsClientManager.getRestHighLevelClient();
+        try {
+
+            //1.创建searchRequest
+            SearchRequest searchRequest = new SearchRequest();
+            searchRequest.indices(indexName);
+
+
+            //2.创建筛选条件
+            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+            searchSourceBuilder.size(0);
+            BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+            if (!StringUtils.isEmpty(startTime) && !StringUtils.isEmpty(endTime)) {
+                //时间筛选
+                boolQueryBuilder.must(QueryBuilders.rangeQuery("CreateTime").format("yyyy-MM-dd").gte(startTime).lte(endTime));
+            }
+            if (!StringUtils.isEmpty(channelTypeValue)) {
+                //渠道类型
+                boolQueryBuilder.must(QueryBuilders.matchPhraseQuery("ChannelType", channelTypeValue));
+            }
+            if (channelNameValueArr != null && channelNameValueArr.size() != 0) {
+                //渠道名
+                BoolQueryBuilder channelNameValueQuery = QueryBuilders.boolQuery();
+                for (int i = 0; i < channelNameValueArr.size(); i++) {
+                    String channelName = channelNameValueArr.getString(i);
+                    channelNameValueQuery.should(QueryBuilders.termQuery("ChannelName.keyword", channelName));
+                }
+                boolQueryBuilder.must(channelNameValueQuery);
+            }
+            if (!StringUtils.isEmpty(callType)) {
+                //天翼橙分期,天翼随意借，和包贷 索引使用的是DecisionType字段
+                if("天翼橙分期_jc".equals(indexName) || "天翼随意借_jc".equals(indexName) || "和包贷_jc".equals(indexName)){
+                    if("授信".equals(callType)){
+                        boolQueryBuilder.must(QueryBuilders.termQuery("DecisionType", 0));
+                    }else if("取现".equals(callType)){
+                        boolQueryBuilder.must(QueryBuilders.termQuery("DecisionType", 1));
+                    }
+                }else{
+                    boolQueryBuilder.must(QueryBuilders.termQuery("Call_Type.keyword", callType));
+                }
+
+            }
+
+
+            //3.添加聚合条件
+            AggregationBuilder aggregationBuilder = null;
+            //时间类型
+            if (StringUtils.equals("HOUR", timeTypeValue)) {
+                //按时分组
+                aggregationBuilder = AggregationBuilders.dateHistogram("agg_time").format("yyyy-MM-dd HH").field("CreateTime").dateHistogramInterval(DateHistogramInterval.HOUR);
+            } else if (StringUtils.equals("DAY", timeTypeValue)) {
+                //按天分组
+                aggregationBuilder = AggregationBuilders.dateHistogram("agg_time").format("yyyy-MM-dd").field("CreateTime").dateHistogramInterval(DateHistogramInterval.DAY);
+            } else if (StringUtils.equals("WEEK", timeTypeValue)) {
+                //按周分组
+                aggregationBuilder = AggregationBuilders.dateHistogram("agg_time").format("yyyy-MM-dd").field("CreateTime").dateHistogramInterval(DateHistogramInterval.WEEK);
+            } else if (StringUtils.equals("MONTH", timeTypeValue)) {
+                //按月分组
+                aggregationBuilder = AggregationBuilders.dateHistogram("agg_time").format("yyyy-MM").field("CreateTime").dateHistogramInterval(DateHistogramInterval.MONTH);
+            } else {
+                //不分组，统计选中时间段数据
+                aggregationBuilder = AggregationBuilders.dateRange("agg_time").field("CreateTime").format("yyyy-MM-dd HH:mm:ss").addRange(startTime.concat(" 00:00:00"), endTime.concat(" 23:59:59"));
+            }
+
+            if (!StringUtils.isEmpty(selectedDimension)) {
+                //有维度
+                if (StringUtils.equals("text", selectedDimensionsType)) {
+                    selectedDimension = selectedDimension.concat(".keyword");
+                }
+                if (StringUtils.isEmpty(blockSort)) {
+                    //无分组
+                    TermsAggregationBuilder dimensionTermsAgg = AggregationBuilders.terms("agg_dimension").field(selectedDimension).order(BucketOrder.key(true));
+                    //1.申请量(预审)
+                    BoolQueryBuilder applyCountQuery = QueryBuilders.boolQuery();
+                    applyCountQuery.must(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                    FilterAggregationBuilder applyCountFilterAgg = AggregationBuilders.filter("agg_apply_count", applyCountQuery);
+                    CardinalityAggregationBuilder applyCountCardinalityAgg = AggregationBuilders.cardinality("uniq_apply_count").field("IdentityNo.keyword");
+                    applyCountFilterAgg.subAggregation(applyCountCardinalityAgg);
+                    dimensionTermsAgg.subAggregation(applyCountFilterAgg);
+
+                    //2.申请量（终审）
+                    BoolQueryBuilder applyCOuntQueryZS = QueryBuilders.boolQuery();
+                    applyCOuntQueryZS.must(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                    FilterAggregationBuilder applyCountFilterAggZS = AggregationBuilders.filter("agg_apply_count_zs", applyCOuntQueryZS);
+                    CardinalityAggregationBuilder applyCountCardinalityAggZS = AggregationBuilders.cardinality("uniq_apply_count_zs").field("IdentityNo.keyword");
+                    applyCountFilterAggZS.subAggregation(applyCountCardinalityAggZS);
+                    dimensionTermsAgg.subAggregation(applyCountFilterAggZS);
+
+                    //3.授信金额
+                    BoolQueryBuilder applyAmonutQuery = QueryBuilders.boolQuery();
+                    applyAmonutQuery.should(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                    applyAmonutQuery.should(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                    SumAggregationBuilder applyAmountSumAgg = AggregationBuilders.sum("sum_amount").field("RU_2_Amount");
+                    FilterAggregationBuilder applyAmountFilterAgg = AggregationBuilders.filter("agg_apply_amount", applyAmonutQuery);
+                    applyAmountFilterAgg.subAggregation(applyAmountSumAgg);
+                    dimensionTermsAgg.subAggregation(applyAmountFilterAgg);
+
+                    //4.授信通过率和件均
+                    BoolQueryBuilder applyPassQuery = QueryBuilders.boolQuery();
+                    applyPassQuery.must(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                    applyPassQuery.must(QueryBuilders.termQuery("Result", 1));
+                    CardinalityAggregationBuilder applyPassCardinalityAgg = AggregationBuilders.cardinality("uniq_apply_pass").field("IdentityNo.keyword");
+                    SumAggregationBuilder applyPassSumAgg = AggregationBuilders.sum("agg_jianjun").field("RU_2_Amount");
+                    FilterAggregationBuilder applyPassFilterAgg = AggregationBuilders.filter("agg_apply_pass", applyPassQuery);
+                    applyPassFilterAgg.subAggregation(applyPassCardinalityAgg);
+                    applyPassFilterAgg.subAggregation(applyPassSumAgg);
+                    dimensionTermsAgg.subAggregation(applyPassFilterAgg);
+
+                    //5.申请通过率（预审）
+                    BoolQueryBuilder applyPassQueryYS = QueryBuilders.boolQuery();
+                    applyPassQueryYS.must(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                    applyPassQueryYS.must(QueryBuilders.termQuery("Result", 1));
+                    FilterAggregationBuilder applyPassFilterAggYS = AggregationBuilders.filter("agg_apply_pass_ys", applyPassQueryYS);
+                    CardinalityAggregationBuilder applyPassCardinalityAggYS = AggregationBuilders.cardinality("uniq_apply_pass_ys").field("IdentityNo.keyword");
+                    applyPassFilterAggYS.subAggregation(applyPassCardinalityAggYS);
+                    dimensionTermsAgg.subAggregation(applyPassFilterAggYS);
+                    aggregationBuilder.subAggregation(dimensionTermsAgg);
+                } else {
+                    //有分组
+                    List grupList = splitGroup(blockSort, selectedDimensionsType);
+                    for (int i = 0; i < grupList.size(); i++) {
+
+                        //1.维度过滤
+                        FilterAggregationBuilder dimensionFilterAgg = null;
+                        if (StringUtils.equals("text", selectedDimensionsType)) {
+                            //离散
+                            //再次分组
+                            List<String> groupDetailList = splitGroupDetail(grupList.get(i).toString());
+                            BoolQueryBuilder dimensionDetail = QueryBuilders.boolQuery();
+                            if (groupDetailList == null) {
+                                dimensionDetail.must(QueryBuilders.termQuery(selectedDimension, grupList.get(i).toString()));
+                            } else {
+                                for (String groupDetail : groupDetailList) {
+                                    dimensionDetail.should(QueryBuilders.termQuery(selectedDimension, groupDetail));
+                                }
+                            }
+                            dimensionFilterAgg = AggregationBuilders.filter(grupList.get(i).toString(), dimensionDetail);
+                        } else {
+                            BoolQueryBuilder dimensionDetail = seriesRangeQuery(grupList.get(i).toString(), selectedDimension);
+                            if (dimensionDetail == null) {
+                                return BaseRes.isFail();
+                            } else {
+                                dimensionFilterAgg = AggregationBuilders.filter(grupList.get(i).toString(), dimensionDetail);
+                            }
+                        }
+
+
+                        //2.申请量（预审）
+                        BoolQueryBuilder applyCountQuery = QueryBuilders.boolQuery();
+                        applyCountQuery.must(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                        FilterAggregationBuilder applyCountFilterAgg = AggregationBuilders.filter("agg_apply_count", applyCountQuery);
+                        CardinalityAggregationBuilder applyCountCardinalityAgg = AggregationBuilders.cardinality("uniq_apply_count").field("IdentityNo.keyword");
+                        applyCountFilterAgg.subAggregation(applyCountCardinalityAgg);
+                        dimensionFilterAgg.subAggregation(applyCountFilterAgg);
+
+                        //3.申请量（终审）
+                        BoolQueryBuilder applyCountQueryZS = QueryBuilders.boolQuery();
+                        applyCountQueryZS.must(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                        FilterAggregationBuilder applyCountFilterAggZS = AggregationBuilders.filter("agg_apply_count_zs", applyCountQueryZS);
+                        CardinalityAggregationBuilder applyCountCardinalityAggZS = AggregationBuilders.cardinality("uniq_apply_count_zs").field("IdentityNo.keyword");
+                        applyCountFilterAggZS.subAggregation(applyCountCardinalityAggZS);
+                        dimensionFilterAgg.subAggregation(applyCountFilterAggZS);
+
+
+                        //4.授信金额
+                        BoolQueryBuilder applyAmountQuery = QueryBuilders.boolQuery();
+                        applyAmountQuery.should(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                        applyAmountQuery.should(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                        FilterAggregationBuilder applyAmountFilterAgg = AggregationBuilders.filter("agg_apply_amount", applyAmountQuery);
+                        SumAggregationBuilder applyAmountSumAgg = AggregationBuilders.sum("sum_amount").field("RU_2_Amount");
+                        applyAmountFilterAgg.subAggregation(applyAmountSumAgg);
+                        dimensionFilterAgg.subAggregation(applyAmountFilterAgg);
+
+                        //5.授信通过率，件均
+                        BoolQueryBuilder applyPassQuery = QueryBuilders.boolQuery();
+                        applyPassQuery.must(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                        applyPassQuery.must(QueryBuilders.termQuery("Result", 1));
+                        FilterAggregationBuilder applyPassFilterAgg = AggregationBuilders.filter("agg_apply_pass", applyPassQuery);
+                        CardinalityAggregationBuilder applyPassCardinalityAgg = AggregationBuilders.cardinality("uniq_apply_pass").field("IdentityNo.keyword");
+                        SumAggregationBuilder applyPassSumAgg = AggregationBuilders.sum("agg_jianjun").field("RU_2_Amount");
+                        applyPassFilterAgg.subAggregation(applyPassCardinalityAgg);
+                        applyPassFilterAgg.subAggregation(applyPassSumAgg);
+                        dimensionFilterAgg.subAggregation(applyPassFilterAgg);
+
+                        //6.申请通过率（预审）
+                        BoolQueryBuilder applyPassQueryYS = QueryBuilders.boolQuery();
+                        applyPassQueryYS.must(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                        applyPassQueryYS.must(QueryBuilders.termQuery("Result", 1));
+                        FilterAggregationBuilder applyPassFilterAggYS = AggregationBuilders.filter("agg_apply_pass_ys", applyPassQueryYS);
+                        CardinalityAggregationBuilder applyPassCardinalityAggYS = AggregationBuilders.cardinality("uniq_apply_pass_ys").field("IdentityNo.keyword");
+                        applyPassFilterAggYS.subAggregation(applyPassCardinalityAggYS);
+                        dimensionFilterAgg.subAggregation(applyPassFilterAggYS);
+
+                        aggregationBuilder.subAggregation(dimensionFilterAgg);
+                    }
+                }
+            } else {
+
+                //无维度
+                //1.申请量统计（预审）
+                BoolQueryBuilder applyCountQuery = QueryBuilders.boolQuery();
+                applyCountQuery.must(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                CardinalityAggregationBuilder applyCountCardinalityAgg = AggregationBuilders.cardinality("uniq_apply_count").field("IdentityNo.keyword");
+                FilterAggregationBuilder applyCountFilterAgg = AggregationBuilders.filter("agg_apply_count", applyCountQuery);
+                applyCountFilterAgg.subAggregation(applyCountCardinalityAgg);
+                aggregationBuilder.subAggregation(applyCountFilterAgg);
+
+                //2.申请金额
+                BoolQueryBuilder applyAmountQuery = QueryBuilders.boolQuery();
+                applyAmountQuery.should(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                applyAmountQuery.should(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                SumAggregationBuilder applyAmountSumAgg = AggregationBuilders.sum("sum_apply_amount").field("RU_2_Amount");
+                FilterAggregationBuilder applyAmountFilterAgg = AggregationBuilders.filter("agg_apply_amount", applyAmountQuery);
+                applyAmountFilterAgg.subAggregation(applyAmountSumAgg);
+                aggregationBuilder.subAggregation(applyAmountFilterAgg);
+
+                //3.申请通过率(终审)
+                BoolQueryBuilder applyPassQuery = QueryBuilders.boolQuery();
+                applyPassQuery.must(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                applyPassQuery.must(QueryBuilders.termQuery("Result", 1));
+                FilterAggregationBuilder applyPassFilterAgg = AggregationBuilders.filter("agg_apply_pass", applyPassQuery);
+                CardinalityAggregationBuilder applyPassCardinalityAgg = AggregationBuilders.cardinality("uniq_apply_pass").field("IdentityNo.keyword");
+                applyPassFilterAgg.subAggregation(applyPassCardinalityAgg);
+
+                //4.件均
+                SumAggregationBuilder jianjunSumAgg = AggregationBuilders.sum("agg_jianjun").field("RU_2_Amount");
+                applyPassFilterAgg.subAggregation(jianjunSumAgg);
+                aggregationBuilder.subAggregation(applyPassFilterAgg);
+
+                //5.申请量统计(终审)
+                BoolQueryBuilder applyCountQueryZS = QueryBuilders.boolQuery();
+                applyCountQueryZS.must(QueryBuilders.termQuery("FlowId.keyword", ZSMap.get(indexName)));
+                CardinalityAggregationBuilder applyCountCardinalityAggZS = AggregationBuilders.cardinality("uniq_apply_count_zs").field("IdentityNo.keyword");
+                FilterAggregationBuilder applyCountFilterAggZS = AggregationBuilders.filter("agg_apply_count_zs", applyCountQueryZS);
+                applyCountFilterAggZS.subAggregation(applyCountCardinalityAggZS);
+                aggregationBuilder.subAggregation(applyCountFilterAggZS);
+
+                //6 申请通过率（预审）
+                BoolQueryBuilder applyPassQueryYS = QueryBuilders.boolQuery();
+                applyPassQueryYS.must(QueryBuilders.termQuery("FlowId.keyword", StringUtils.equals(callType,"取现") ? ZSMap.get(indexName) : YSMap.get(indexName)));
+                applyPassQueryYS.must(QueryBuilders.termQuery("Result", 1));
+                FilterAggregationBuilder applyPassFilterAggYS = AggregationBuilders.filter("agg_apply_pass_ys", applyPassQueryYS);
+                CardinalityAggregationBuilder applyPassCardinalityAggYS = AggregationBuilders.cardinality("uniq_apply_pass_ys").field("IdentityNo.keyword");
+                applyPassFilterAggYS.subAggregation(applyPassCardinalityAggYS);
+                aggregationBuilder.subAggregation(applyPassFilterAggYS);
+            }
+
+
+            //4.将搜索条件和聚合添加到searchRequest
+            searchSourceBuilder.query(boolQueryBuilder);
+            searchSourceBuilder.aggregation(aggregationBuilder);
+            searchRequest.source(searchSourceBuilder);
+
+
+            //5.获取查询结果
+            SearchResponse response = client.search(searchRequest);
+            List result = getResult(response, selectedDimension, blockSort, timeTypeValue);
+            return BaseRes.isOk().data(result);
+
+        } catch (Exception e) {
+            logger.error("出现异常：---->:{}", e);
+            e.printStackTrace();
+        } finally {
+            try {
+                client.close();
+            } catch (Exception e) {
+                logger.error("es客户端关闭失败：{}", e);
+            }
+        }
+        return BaseRes.isFail();
+    }
+
+
+    /**
+     * 连续数据分组查询
+     *
+     * @param groupDetail
+     */
+    private BoolQueryBuilder seriesRangeQuery(String groupDetail, String selectedDimension) {
+        if (!StringUtils.isEmpty(groupDetail)) {
+            BoolQueryBuilder dimensionDetail = new BoolQueryBuilder();
+            String startChar = groupDetail.substring(0, 1);
+            String endChar = groupDetail.substring(groupDetail.length() - 1, groupDetail.length());
+            if ("(".equals(startChar) && ")".equals(endChar)) {
+                List<String> list = splitGroupDetail(groupDetail);
+                if (list != null && list.size() != 0) {
+                    for (String detail : list) {
+                        String[] nums = detail.split("-");
+                        if (nums != null) {
+                            if (nums.length == 2) {
+                                String start = nums[0];
+                                String end = nums[1];
+                                if (StringUtils.equals("*", end) && StringUtils.equals("*", start)) {
+                                    //不添加任何过滤条件
+                                } else if (StringUtils.equals("*", start) && !StringUtils.equals("*", end)) {
+                                    dimensionDetail.should(QueryBuilders.rangeQuery(selectedDimension).lt(end));
+                                } else if (!StringUtils.equals("*", start) && StringUtils.equals("*", end)) {
+                                    dimensionDetail.should(QueryBuilders.rangeQuery(selectedDimension).gte(start));
+                                } else {
+                                    dimensionDetail.should(QueryBuilders.rangeQuery(selectedDimension).gte(start).lt(end));
+                                }
+                            } else if (nums.length == 1) {
+                                dimensionDetail.should(QueryBuilders.termQuery(selectedDimension, nums[0]));
+                            }
+
+                        } else {
+                            return null;
+                        }
+                    }
+                }
+            } else {
+                String[] nums = groupDetail.split("-");
+                if (nums != null) {
+                    if (nums.length == 2) {
+                        String start = nums[0];
+                        String end = nums[1];
+                        if (StringUtils.equals("*", start) && StringUtils.equals("*", end)) {
+                            //不添加任何过滤条件
+                        } else if (StringUtils.equals("*", start) && !StringUtils.equals("*", end)) {
+                            dimensionDetail.must(QueryBuilders.rangeQuery(selectedDimension).lt(end));
+                        } else if (!StringUtils.equals("*", start) && StringUtils.equals("*", end)) {
+                            dimensionDetail.must(QueryBuilders.rangeQuery(selectedDimension).gte(start));
+                        } else {
+                            dimensionDetail.must(QueryBuilders.rangeQuery(selectedDimension).gte(start).lt(end));
+                        }
+                    } else if (nums.length == 1) {
+                        dimensionDetail.must(QueryBuilders.termQuery(selectedDimension, nums[0]));
+                    }
+                }
+            }
+            return dimensionDetail;
+        }
+        return null;
+    }
+
+
+    /**
+     * 解析分组内的详细数数据
+     * 例:原分组（20&30&40），50，60
+     * 分组后，第一组（20&30&40），第二组50，第三组60
+     * 此时再解析第一组（20&30&40）数据
+     *
+     * @param groupDetail
+     * @return
+     */
+    private List<String> splitGroupDetail(String groupDetail) {
+        if (!StringUtils.isEmpty(groupDetail)) {
+            String startChar = groupDetail.substring(0, 1);
+            String endChar = groupDetail.substring(groupDetail.length() - 1, groupDetail.length());
+            if ("(".equals(startChar) && ")".equals(endChar)) {
+                String newGroupDetail = groupDetail.substring(1, groupDetail.length() - 1);
+                return new ArrayList(Arrays.asList(newGroupDetail.split("&")));
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 解析分组
+     *
+     * @param group
+     * @return
+     */
+    private List splitGroup(String group, String type) {
+        List list = new ArrayList();
+        group = group.replace("，", ",")
+                .replace("（", "(")
+                .replace("）", ")")
+                .replace("&", "&")
+                .replace("-", "-")
+                .replaceAll("\\s+", "");
+
+        String[] arr = group.split(",");
+        if (arr != null && arr.length > 0) {
+            for (String str : arr) {
+                list.add(str);
+            }
+        }
+        return list;
+    }
+
+    /**
+     * 解析响应
+     *
+     * @param response
+     * @param selectedDimension
+     * @param blockSort
+     * @return
+     */
+    public List getResult(SearchResponse response, String selectedDimension, String blockSort, String timeTypeValue) {
+        List list = new ArrayList();
+        Aggregation aggregation = response.getAggregations().get("agg_time");
+        List<? extends MultiBucketsAggregation.Bucket> buckets = null;
+        if (StringUtils.equals("NONE", timeTypeValue)) {
+            buckets = ((Range) aggregation).getBuckets();
+        } else {
+            buckets = ((Histogram) aggregation).getBuckets();
+        }
+        if (buckets == null || buckets.size() == 0) {
+            return list;
+        }
+
+        if (!StringUtils.isEmpty(selectedDimension)) {
+            //有维度
+            if (StringUtils.isEmpty(blockSort)) {
+                //无分组
+                for (MultiBucketsAggregation.Bucket bucket : buckets) {
+                    List<? extends Terms.Bucket> dimensionBuckets = ((Terms) bucket.getAggregations().get("agg_dimension")).getBuckets();
+                    Map timeMap = new HashMap();
+                    List dimensionList = new ArrayList();
+                    for (Terms.Bucket termsBucket : dimensionBuckets) {
+                        Map dimensionMap = new HashMap();
+                        //维度
+                        String dimension = termsBucket.getKeyAsString();
+
+                        //申请量
+                        Filter applyCountFilter = termsBucket.getAggregations().get("agg_apply_count");
+                        Cardinality applyCountCardinality = applyCountFilter.getAggregations().get("uniq_apply_count");
+                        long applyCount = applyCountCardinality.getValue();
+
+                        //申请金额
+                        Filter applyAmountFilter = termsBucket.getAggregations().get("agg_apply_amount");
+                        Sum applyAmountSum = applyAmountFilter.getAggregations().get("sum_amount");
+                        Double applyAmount = applyAmountSum.getValue();
+
+                        //授信通过率
+                        Filter applyPassFilter = termsBucket.getAggregations().get("agg_apply_pass");
+                        Cardinality applyPassCardinality = applyPassFilter.getAggregations().get("uniq_apply_pass");
+                        long applyPass = applyPassCardinality.getValue();
+                        BigDecimal applyPassRate = BigDecimal.ZERO.compareTo(new BigDecimal(applyCount)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(applyPass).divide(new BigDecimal(applyCount), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+
+                        //终审申请量
+                        Filter applyCountFilterZS = termsBucket.getAggregations().get("agg_apply_count_zs");
+                        Cardinality applyCountCardinalityZS = applyCountFilterZS.getAggregations().get("uniq_apply_count_zs");
+                        long applyCountZS = applyCountCardinalityZS.getValue();
+
+                        //预审通过量
+                        Filter applyPassFilterYS = termsBucket.getAggregations().get("agg_apply_pass_ys");
+                        Cardinality applyPassCardinalityYS = applyPassFilterYS.getAggregations().get("uniq_apply_pass_ys");
+                        long applyPassYS = applyPassCardinalityYS.getValue();
+                        //件均
+                        Sum applyPassSum = applyPassFilter.getAggregations().get("agg_jianjun");
+                        Double jianjun = applyPassSum.getValue();
+                        BigDecimal applyPassAmountBalance = BigDecimal.ZERO.compareTo(new BigDecimal(applyCountZS)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(jianjun).divide(new BigDecimal(applyCountZS), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+                        //终审通过率 = count(终审id+身份证去重+result =1) /终审申请量
+                        BigDecimal applyPassRateZS = BigDecimal.ZERO.compareTo(new BigDecimal(applyCountZS)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(applyPass).divide(new BigDecimal(applyCountZS), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+                        //预审通过量 = count(预审id+身份证去重+result = 1)/预审申请量
+                        BigDecimal applyPassRateYS = BigDecimal.ZERO.compareTo(new BigDecimal(applyPassYS)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(applyPassYS).divide(new BigDecimal(applyCount), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+                        dimensionMap.put("dimensionKey", dimension);
+                        dimensionMap.put("applyCount", applyCount);
+                        dimensionMap.put("applyAmount", new BigDecimal(applyAmount).setScale(DIGITS, BigDecimal.ROUND_HALF_UP));
+                        dimensionMap.put("applyPassRate", applyPassRate);
+                        dimensionMap.put("applyPassAmountBalance", applyPassAmountBalance);
+                        dimensionMap.put("applyPassRateYS", applyPassRateYS);
+                        dimensionMap.put("applyPassRateZS", applyPassRateZS);
+                        dimensionList.add(dimensionMap);
+                    }
+                    timeMap.put("time", bucket.getKeyAsString());
+                    timeMap.put("dimensions", dimensionList);
+                    list.add(timeMap);
+                }
+            } else {
+                //有分组
+                for (MultiBucketsAggregation.Bucket bucket : buckets) {
+                    Map timeMap = new HashMap();
+                    List dimensionsList = new ArrayList();
+                    Map dimensionAggMap = bucket.getAggregations().asMap();
+                    Set<String> dimensionKeys = dimensionAggMap.keySet();
+                    for (String key : dimensionKeys) {
+                        Map dimensionMap = new HashMap();
+                        Filter dimensionFilter = bucket.getAggregations().get(key);
+                        //申请量
+                        Filter applyCountFilter = dimensionFilter.getAggregations().get("agg_apply_count");
+                        Cardinality applyCountCardinality = applyCountFilter.getAggregations().get("uniq_apply_count");
+                        long applyCount = applyCountCardinality.getValue();
+                        //授信金额
+                        Filter applyAmountFilter = dimensionFilter.getAggregations().get("agg_apply_amount");
+                        Sum applyAmountSum = applyAmountFilter.getAggregations().get("sum_amount");
+                        Double applyAmount = applyAmountSum.getValue();
+                        //授信通过率
+                        Filter applyPassFilter = dimensionFilter.getAggregations().get("agg_apply_pass");
+                        Cardinality applyPassCardinality = applyPassFilter.getAggregations().get("uniq_apply_pass");
+                        long applyPass = applyPassCardinality.getValue();
+                        BigDecimal applyPassRate = BigDecimal.ZERO.compareTo(new BigDecimal(applyCount)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(applyPass).divide(new BigDecimal(applyCount), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+
+                        //终审申请量
+                        Filter applyCountFilterZS = dimensionFilter.getAggregations().get("agg_apply_count_zs");
+                        Cardinality applyCountCardinalityZS = applyCountFilterZS.getAggregations().get("uniq_apply_count_zs");
+                        long applyCountZS = applyCountCardinalityZS.getValue();
+
+                        //预审通过量
+                        Filter applyPassFilterYS = dimensionFilter.getAggregations().get("agg_apply_pass_ys");
+                        Cardinality applyPassCardinalityYS = applyPassFilterYS.getAggregations().get("uniq_apply_pass_ys");
+                        long applyPassYS = applyPassCardinalityYS.getValue();
+
+                        //件均
+                        Sum applyPassSum = applyPassFilter.getAggregations().get("agg_jianjun");
+                        Double jianjun = applyPassSum.getValue();
+                        BigDecimal applyPassAmountBalance = BigDecimal.ZERO.compareTo(new BigDecimal(applyCountZS)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(jianjun).divide(new BigDecimal(applyCountZS), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+
+                        //终审通过率 = count(终审id+身份证去重+result =1) /终审申请量
+                        BigDecimal applyPassRateZS = BigDecimal.ZERO.compareTo(new BigDecimal(applyCountZS)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(applyPass).divide(new BigDecimal(applyCountZS), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+                        //预审通过量 = count(预审id+身份证去重+result = 1)/预审申请量
+                        BigDecimal applyPassRateYS = BigDecimal.ZERO.compareTo(new BigDecimal(applyPassYS)) == 0 ?
+                                BigDecimal.ZERO : new BigDecimal(applyPassYS).divide(new BigDecimal(applyCount), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+
+                        dimensionMap.put("dimensionKey", key);
+                        dimensionMap.put("applyCount", applyCount);
+                        dimensionMap.put("applyAmount", new BigDecimal(applyAmount).setScale(DIGITS, BigDecimal.ROUND_HALF_UP));
+                        dimensionMap.put("applyPassRate", applyPassRate);
+                        dimensionMap.put("applyPassAmountBalance", applyPassAmountBalance);
+                        dimensionMap.put("applyPassRateZS", applyPassRateZS);
+                        dimensionMap.put("applyPassRateYS", applyPassRateYS);
+                        dimensionsList.add(dimensionMap);
+                    }
+                    timeMap.put("time", bucket.getKeyAsString());
+                    timeMap.put("dimensions", dimensionsList);
+                    list.add(timeMap);
+                }
+            }
+        } else {
+            //无维度
+            for (MultiBucketsAggregation.Bucket bucket : buckets) {
+                Map map = new HashMap();
+                String time = bucket.getKeyAsString();
+                //申请量（预审）
+                Filter applyCountFilter = bucket.getAggregations().get("agg_apply_count");
+                Cardinality cardinality = applyCountFilter.getAggregations().get("uniq_apply_count");
+                long applyCount = cardinality.getValue();
+
+                //授信金额
+                Filter applyAmountFilter = bucket.getAggregations().get("agg_apply_amount");
+                Sum applyAmountSum = applyAmountFilter.getAggregations().get("sum_apply_amount");
+                Double applyAmount = applyAmountSum.getValue();
+
+                //授信通过率
+                Filter applyPassFilter = bucket.getAggregations().get("agg_apply_pass");
+                Cardinality applyPasscardinality = applyPassFilter.getAggregations().get("uniq_apply_pass");
+                long applyPass = applyPasscardinality.getValue();
+                BigDecimal applyPassRate = BigDecimal.ZERO.compareTo(new BigDecimal(applyCount)) == 0 ? BigDecimal.ZERO : new BigDecimal(applyPass).divide(new BigDecimal(applyCount), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+                //终审申请量
+                Filter applyCountFilterZS = bucket.getAggregations().get("agg_apply_count_zs");
+                Cardinality cardinalityZS = applyCountFilterZS.getAggregations().get("uniq_apply_count_zs");
+                long applyCountZS = cardinalityZS.getValue();
+
+                //预审通过量
+                Filter applyPassFilterYS = bucket.getAggregations().get("agg_apply_pass_ys");
+                Cardinality applyPasscardinalityYS = applyPassFilterYS.getAggregations().get("uniq_apply_pass_ys");
+                long applyPassYS = applyPasscardinalityYS.getValue();
+
+                //件均
+                Sum jianjunSum = applyPassFilter.getAggregations().get("agg_jianjun");
+                Double jianjunValue = jianjunSum.getValue();
+                BigDecimal applyPassAmountBalance = BigDecimal.ZERO.compareTo(new BigDecimal(applyCountZS)) == 0 ? BigDecimal.ZERO : new BigDecimal(jianjunValue).divide(new BigDecimal(applyCountZS), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+
+                //终审通过率 = count(终审id+身份证去重+result =1) /终审申请量
+                BigDecimal applyPassRateZS = BigDecimal.ZERO.compareTo(new BigDecimal(applyCountZS)) == 0 ?
+                        BigDecimal.ZERO : new BigDecimal(applyPass).divide(new BigDecimal(applyCountZS), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+                //预审通过量 = count(预审id+身份证去重+result = 1)/预审申请量
+                BigDecimal applyPassRateYS = BigDecimal.ZERO.compareTo(new BigDecimal(applyPassYS)) == 0 ?
+                        BigDecimal.ZERO : new BigDecimal(applyPassYS).divide(new BigDecimal(applyCount), DIGITS, BigDecimal.ROUND_HALF_UP);
+
+
+                map.put("time", time);
+                map.put("applyCount", applyCount);
+                map.put("applyAmount", new BigDecimal(applyAmount).setScale(DIGITS, BigDecimal.ROUND_HALF_UP));
+                map.put("applyPassRate", applyPassRate);
+                map.put("applyPassAmountBalance", applyPassAmountBalance);
+                map.put("applyPassRateZS", applyPassRateZS);
+                map.put("applyPassRateYS", applyPassRateYS);
+                list.add(map);
+            }
+        }
+        return list;
+    }
+
+
+    /**
+     * 获取channelName
+     *
+     * @return
+     */
+    @Override
+    public List<CallParam> getChannelName() {
+        String month = DateUtil.getDateFormatString(new Date(), "yyyyMM");
+        return callParamMapper.getChannelName(month);
+    }
+
+    /**
+     * 从es中查询channelName
+     *
+     * @return
+     */
+    @Override
+    public List<String> getChannelNameFromEs() {
+        List<String> list = new ArrayList<>();
+        String today = DateUtil.getDateFormatString(new Date(),"yyyy-MM-dd");
+        String before =  DateUtil.getDayBefore(90);
+
+        RestHighLevelClient client = null;
+        try{
+            client = EsClientManager.getRestHighLevelClient();
+            SearchRequest searchRequest = new SearchRequest();
+            searchRequest.indices("豆豆钱_sdjc");
+            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+            searchSourceBuilder.size(0);
+            BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder();
+            boolQueryBuilder.must(QueryBuilders.rangeQuery("CreateTime").gte(before).lte(today));
+            TermsAggregationBuilder termsAggregation = AggregationBuilders.terms("group_by_channel_name").field("ChannelName.keyword").size(100000);
+
+            searchSourceBuilder.query(boolQueryBuilder);
+            searchSourceBuilder.aggregation(termsAggregation);
+            searchRequest.source(searchSourceBuilder);
+
+            SearchResponse response = client.search(searchRequest);
+            if(response != null){
+                Aggregation aggregation = response.getAggregations().get("group_by_channel_name");
+                List<? extends Terms.Bucket> buckets= ((Terms)aggregation).getBuckets();
+                for(Terms.Bucket termsBucket : buckets){
+                    list.add(termsBucket.getKey().toString());
+                }
+            }
+        }catch (Exception e){
+            System.out.println(e);
+            logger.error("出现异常--->{}",e);
+        }finally {
+            if(client != null){
+                try {
+                    client.close();
+                }catch (Exception e){
+                   logger.error("es客户端关闭失败--->{}",e);
+                }
+            }
+        }
+        return list;
+    }
+}
+
+
+
+
