@@ -212,7 +212,7 @@ public class RpcConsumer {
 
 
 
-注意知识点： 反射，动态代理，网络编程，ObjectInputStream
+注意知识点： 反射，动态代理，网络编程，ObjectInputStream,泛型 T
 
 
 
