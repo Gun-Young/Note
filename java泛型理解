@@ -1,0 +1,55 @@
+一.什么是泛型
+泛型的本质是参数化类型： 也就是说，泛型就是将所操作的数据类型作为参数的一种语法。
+public class Play<T>{
+    T haha(){
+       return T;
+    }
+}
+其中T就是作为一个类型参数在Play被数理化的时候传递来的参数
+Play<Integer> play = new Play<>();
+这里T就会被实例化为Integer
+
+
+
+
+二.泛型的作用
+（1）泛型将代码安全性检查提前到编译期
+泛型可以解决容器的类型安全，使用泛型后，能让编译器在编译的时候借助传入的类型参数检查对容器的插入，获取操作是否合法。
+
+（2）泛型能够省去类型强制转换
+在JDK1.5之前，JAVA容器都是通过将类型向上转型为Object类型来实现，因此在从容器中取出来的时候需要手动强制转换
+   List dogs = new ArrayList();
+   dags.add(d1); ...
+   Dog dog =(Dog)dogs.get(1);
+在使用泛型之后，由于编译器知道了具体的类型，因此编译器会自动进行强制转换，使得代码更优雅
+  List<Dog> dogs = new ArrayList<>();
+  dag.add(d1);....
+  Dog dog = dogs.get(1);   //无需类型转换
+  
+  
+  public class Node<T>{
+      private T Obj;
+      public T get(){
+         return obj;
+      }
+      
+      public void set(T obj){
+         this.obj = obj;
+      }
+      
+      public static void main(Stirng[] args){
+          Student stu = new Student();
+          Node<Student> node = new Node<>();
+          node.set(stu);
+          Student stu2 = node.get();
+        
+      }
+  }
+  
+  
+
+
+
+
+
+
