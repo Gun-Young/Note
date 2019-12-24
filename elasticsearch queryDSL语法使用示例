@@ -1,0 +1,1886 @@
+---------------------------------------------es基本查询和JAVA使用es---------------------------------
+参考资料：https://www.cnblogs.com/xionggeclub/p/7975982.html
+elasticsearch 聚合
+
+1.首先，初始化Builder
+SearchRequestBuilder sbuilder = client.prepareSearch("player").setTypes("player");
+
+
+2.group by/count
+例如要计算每个球队的球员数，如果使用SQL语句，应表达如下
+select team, count(*) as player_count from player group by team;
+
+es--java api 
+TermsBuilder teamAgg= AggregationBuilders.terms("player_count ").field("team");
+sbuilder.addAggregation(teamAgg);
+SearchResponse response = sbuilder.execute().actionGet();
+
+
+3.group by多个field
+例如要计算每个球队每个位置的球员数，如果使用SQL语句，应表达如下：
+select team, position, count(*) as pos_count from player group by team, position;
+
+es--java api 
+TermsBuilder teamAgg= AggregationBuilders.terms("player_count ").field("team");
+TermsBuilder posAgg= AggregationBuilders.terms("pos_count").field("position");
+sbuilder.addAggregation(teamAgg.subAggregation(posAgg));        ---- 两个合成一个？？？
+SearchResponse response = sbuilder.execute().actionGet();
+
+
+
+4.max/min/sum/avg
+例如要计算每个球队年龄最大/最小/总/平均的球员年龄，如果使用SQL语句，应表达如下：
+select team, max(age) as max_age from player group by team;
+
+es--java api 
+TermsBuilder teamAgg= AggregationBuilders.terms("player_count ").field("team");
+MaxBuilder ageAgg= AggregationBuilders.max("max_age").field("age");
+sbuilder.addAggregation(teamAgg.subAggregation(ageAgg));
+SearchResponse response = sbuilder.execute().actionGet();
+
+
+5.对多个field求max/min/sum/avg
+例如要计算每个球队球员的平均年龄，同时又要计算总年薪，如果使用SQL语句，应表达如下：
+select team, avg(age)as avg_age, sum(salary) as total_salary from player group by team;
+
+es--java api 
+TermsBuilder teamAgg= AggregationBuilders.terms("team");
+AvgBuilder ageAgg= AggregationBuilders.avg("avg_age").field("age");
+SumBuilder salaryAgg= AggregationBuilders.avg("total_salary ").field("salary");
+sbuilder.addAggregation(teamAgg.subAggregation(ageAgg).subAggregation(salaryAgg));
+SearchResponse response = sbuilder.execute().actionGet();
+
+
+6.聚合后对Aggregation结果排序
+例如要计算每个球队总年薪，并按照总年薪倒序排列，如果使用SQL语句，应表达如下：
+select team, sum(salary) as total_salary from player group by team order by total_salary desc;
+
+es--java api 
+TermsBuilder teamAgg= AggregationBuilders.terms("team").order(Order.aggregation("total_salary ", false);
+SumBuilder salaryAgg= AggregationBuilders.avg("total_salary ").field("salary");
+sbuilder.addAggregation(teamAgg.subAggregation(salaryAgg));
+SearchResponse response = sbuilder.execute().actionGet();
+需要特别注意的是，排序是在TermAggregation处执行的，Order.aggregation函数的第一个参数是aggregation的名字，第二个参数是boolean型，true表示正序，false表示倒序。 
+
+
+
+7.Aggregation结果条数的问题
+默认情况下，search执行后，仅返回10条聚合结果，如果想返回更多的结果，需要在构建TermsBuilder 时指定size：
+
+
+
+
+8.Aggregation结果的解析/输出
+Map<String, Aggregation> aggMap = response.getAggregations().asMap();
+StringTerms teamAgg= (StringTerms) aggMap.get("keywordAgg");
+Iterator<Bucket> teamBucketIt = teamAgg.getBuckets().iterator();
+while (teamBucketIt .hasNext()) {
+Bucket buck = teamBucketIt .next();
+//球队名
+String team = buck.getKey();
+//记录数
+long count = buck.getDocCount();
+//得到所有子聚合
+Map subaggmap = buck.getAggregations().asMap();
+//avg值获取方法
+double avg_age= ((InternalAvg) subaggmap.get("avg_age")).getValue();
+//sum值获取方法
+double total_salary = ((InternalSum) subaggmap.get("total_salary")).getValue();
+//...
+//max/min以此类推
+}
+
+----------------------------------------------------------------------------------------------------------
+参考资料：http://www.dczou.com/viemall/670.html
+es 聚合2
+
+1.单值聚合
+dsl:----->
+GET /ecommerce/product/_search
+{
+  "aggs": {
+    "sum_aggs": {
+      "sum": {
+        "field": "price"
+      }
+    }
+  }
+}
+java:----->
+SumAggregationBuilder builder = AggregationBuilders.sum("sum_aggs").field("price");
+SearchResponse response = client.prepareSearch("ecommerce").setTypes("product")
+.addAggregation(builder)
+.execute().actionGet();
+   Map<String, Aggregation> aggrMap = response.getAggregations().asMap();
+   InternalSum internalSum= (InternalSum) aggrMap.get("sum_aggs");
+   System.out.println("   {name:"+ internalSum.getName() +",sum:"+internalSum.getValue() +"}");
+
+返回：------->
+"aggregations": {
+
+    "sum_aggs": {
+
+      "value": 95
+
+    }
+
+
+
+
+
+2.min最小值
+dsl: ----->
+GET /ecommerce/product/_search
+{
+  "aggs": {
+     "min_price": {
+      "min": {
+             "field": "price"
+          }
+    }
+  }
+}
+
+
+java ----->
+MinAggregationBuilder builder = AggregationBuilders.min("min_aggs").field("price");
+SearchResponse response = client.prepareSearch("ecommerce").setTypes("product")
+.addAggregation(builder)
+.execute().actionGet();
+   Map<String, Aggregation> aggrMap = response.getAggregations().asMap();
+   InternalMin internalMin= (InternalMin) aggrMap.get("min_aggs");
+   System.out.println("   {name:"+ internalMin.getName() +",min:"+internalMin.getValue() +"}");
+
+
+
+
+3.max 求最大值
+dsl:---->
+GET /ecommerce/product/_search
+{
+  "aggs": {
+    "max_price": {
+      "max": {
+        "field": "price"
+      }
+    }
+  }
+}
+
+java---->
+MaxAggregationBuilder builder = AggregationBuilders.max("max_aggs").field("price");
+SearchResponse response = client.prepareSearch("ecommerce").setTypes("product")
+.addAggregation(builder)
+.execute().actionGet();
+   Map<String, Aggregation> aggrMap = response.getAggregations().asMap();
+   InternalMax internalMax= (InternalMax) aggrMap.get("max_aggs");
+   System.out.println("   {name:"+ internalMax.getName() +",max:"+internalMax.getValue() +"}");
+
+
+
+
+
+4.avg求平均值
+dsl---->
+GET /ecommerce/product/_search
+{
+  "aggs": {
+    "avg_price": {
+      "avg": {
+        "field": "price"
+      }
+    }
+  }
+}
+
+java---->
+AvgAggregationBuilder builder = AggregationBuilders.avg("avg_aggs").field("price");
+SearchResponse response = client.prepareSearch("ecommerce").setTypes("product")
+.addAggregation(builder)
+.execute().actionGet();
+   Map<String, Aggregation> aggrMap = response.getAggregations().asMap();
+   InternalAvg internalAvg= (InternalAvg) aggrMap.get("avg_aggs");
+   System.out.println("   {name:"+ internalAvg.getName() +",avg:"+internalAvg.getValue() +"}");
+
+
+
+
+5. 统计某个字段的数量
+ValueCountBuilder vcb=  AggregationBuilders.count("count_uid").field("uid"); 
+
+
+6.去重统计某个字段的数量
+CardinalityBuilder cb= AggregationBuilders.cardinality("distinct_count_uid").field("uid"); 
+
+
+7.聚合过滤
+FilterAggregationBuilder fab= AggregationBuilders.filter("uid_filter").filter(QueryBuilders.queryStringQuery("uid:001")); 
+
+
+8.按某个字段分组
+TermsBuilder tb=  AggregationBuilders.terms("group_name").field("name");  
+
+
+9.求和
+SumBuilder  sumBuilder= AggregationBuilders.sum("sum_price").field("price");  
+
+
+10.求平均
+	AvgBuilder ab= AggregationBuilders.avg("avg_price").field("price");  
+
+
+-----------------------------------------------------------------------------------
+
+elasticsearch  queryDsl查询示例：
+
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "term": {
+            "ChannelName": {
+              "value": "百度搜索"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+//查询存在某个字段的document
+{
+   "query": {
+     "exists": {
+       "field":"sex"
+     }
+   }
+}
+
+
+//短语匹配，并排序
+{
+  "query": {
+    "match_phrase": {
+      "ChannelName": "懒人信用卡"
+    }
+  },
+  "sort": [
+    {
+      "CreateTime": {
+        "order": "DESC"
+      }
+    }
+  ]
+}
+
+
+
+
+//查询时间段范围
+{
+  "query": {
+    "range": {
+      "CreateTime": {
+        "gte": "2018-08-01",
+        "lte": "2018-08-02"
+      }
+    }
+  }
+}
+
+
+//统计时间段内的金额
+{
+  "query": {
+    "range": {
+      "CreateTime": {
+        "gte": "2019-08-01",
+        "lte": "2019-08-01"
+      }
+    }
+  },
+  "aggs": {
+    "mysum": {
+      "sum": {
+        "field": "RU_2_Amount"
+      }
+    }
+  }
+}
+
+
+
+//合并多子句查询
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "CustName.keyword": "苗苗苗"
+          }
+        },
+        {
+        	"match":{
+        		"LogId":201908000011154567
+        	}
+        }
+      ],
+      "should":[
+         {
+         	"match":{
+         		"LogId":201908000011154567
+         	}
+         }	
+      ]
+    }
+  }
+}
+
+
+----------------------------------------------------------------------
+
+结构化查询语句：
+
+一 .重要的查询过滤语句
+
+1.term过滤
+  term 主要用于精确匹配哪些值，数字，日期，布尔或 未分词的字符串
+{
+  "query": {
+    "term": {
+      "age": {
+        "value": "20"
+      }
+    }
+  }
+}
+
+
+2.terms过滤： 允许指定多个匹配条件（or方式）
+//这里查询 age是20和40
+{
+  "query": {
+    "terms": {
+      "age": [      
+        "20",
+        "40"
+      ]
+    }
+  }
+}
+
+
+3.range 过滤  （范围过滤）
+{
+  "query": {
+    "range": {
+      "age": {
+        "gte": 10,
+        "lte": 20
+      }
+    }
+  }
+}
+
+
+4.exists 和 missing过滤
+用于查询文档中是否包含指定或没有某个字段
+{
+  "query": {
+    "exists": {
+      "field": "address"       //查询存在address字段的doc
+    }
+  }
+}
+
+
+5.bool 过滤  ： 可以用来合并多个过滤条件
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "CustName.keyword": "苗苗苗"
+          }
+        },
+        {
+        	"match":{
+        		"LogId":201908000011154567
+        	}
+        }
+      ],
+      "should":[
+         {
+         	"match":{
+         		"LogId":201908000011154567
+         	}
+         }	
+      ]
+    }
+  }
+}
+
+
+
+
+6.match_all 查询所有的文档
+{
+    "query":{
+	    "match_all":{}
+	}
+}
+
+
+7.match 是一个标准查询，不管需要全文本查询或是精确查询
+{
+  "query": {
+    "match": {
+      "about": "i like"
+    }
+  }
+}
+
+
+9. multi_match 查询
+允许在match查询的基础上同时搜索多个字段
+{
+  "query": {
+    "multi_match": {
+      "query": "i like",                       // 查询内容
+      "fields": ["about","name"]    //搜索字段
+    }
+  }
+}
+
+
+10 bool 查询
+与bool过滤相比，bool查询需要计算每一个查询子句的_score(相关性分值)
+提示： 如果bool 查询下没有must子句，那至少应该有一个should子句。但是 如果有must子句，那么没有should子句也可以进行查询。
+
+
+
+11.带过滤的查询语句
+{
+   "query": {
+     "bool": {
+       "must": [
+        {
+          "match": {
+            "about": "i like"
+          }
+        }
+       ],             //先match查询，再filter过滤
+       "filter": {
+         "term": {
+           "age": "19"
+         }
+       }
+     }
+   }
+}
+
+
+12：单条过滤语句，如果省略查询范围，则默认使用match_all
+{
+  "query": {
+    "bool": {
+      "filter": {
+        "term": {
+          "age": "19"
+        }
+      }
+    }
+  }
+}
+等价于
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"match_all": {}}
+      ], 
+      "filter": {
+        "term": {
+          "age": "19"
+        }
+      }
+    }
+  }
+}
+
+
+13：查询准确值
+对于查询准确值，需要使用过滤器，过滤器很快，不计算相关性而且很容易缓存
+使用term精确查找
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"match_all": {}}
+      ], 
+      "filter": {
+        "term": {
+          "age": "19"
+        }
+      }
+    }
+  }
+}
+
+
+
+14：组合过滤
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"match_all":{
+			    		
+			    	}
+			    }
+			],
+			"filter":{
+				"bool":{
+					"should":[
+					   {
+					   	  "term":{
+					   	  	"CustName":"陈蝶"
+					   	  }
+					   },
+					   {
+					   	  "bool":{
+					   	  	 "must":[
+					   	  	     {
+					   	  	     	"term":{
+					   	  	     		"Mobile":"13519828361"
+					   	  	     	}
+					   	  	     },
+					   	  	     {
+					   	  	     	"term":{
+					   	  	     		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+					   	  	     	}
+					   	  	     }
+					   	  	 ]
+					   	  }
+					   }
+					]
+				}
+			}
+		}
+	}
+}
+
+注意： term 和term是包含操作，而不是必须相等
+{ "term" : { "tags" : "search" } } 
+将匹配下面两个文档
+{ "tags" : ["search"] }
+{ "tags" : ["search", "open_source"] }
+
+
+
+
+
+15： 多词查询
+   15.1 match 可以进行多词查询
+   {
+       “query”:{
+	           "match":{
+			         "title":"BROWN DOG"     
+			   }
+	   }
+   }
+ //会将BROWN DOG分词，然后进行匹配
+
+  15.2 提高精度
+  {
+    "query": {
+        "match": {
+            "title": {     
+                "query":    "BROWN DOG!",
+                "operator": "and"
+            }
+        }
+    }
+ }
+ //match 查询接受一个'operator'参数，默认值为or.如果要求所有查询关键字都匹配，可以更改参数值
+ 为and
+ 
+  15.3 控制精度
+  有时这的确是用户想要的结果。但在大多数全文检索的使用场景下，用户想得到相关的文档，排除那些不太可能相关的文档
+  match查询有'minimum_should_match'参数，参数值表示被视为相关的文档必须匹配的关键词个数。参数值可以设为整数，
+  也可以设置为百分数。因为不能提前确定用户输入的查询关键词个数，使用百分数也很合理
+  {
+  "query": {
+    "match": {
+      "title": {
+        "query":                "quick brown dog",
+        "minimum_should_match": "75%"
+      }
+    }
+  }
+}
+
+
+
+
+16.聚合分析示例：
+{
+  "query":{
+    "bool": {
+      "must": [
+        {
+          "match_all": {}
+        }
+      ]
+    }
+  },
+  "aggs": {
+    "group_by_sex": {        //先由性别分组
+      "terms": {
+        "field":"sex.keyword"
+      },
+      "aggs":{                     //再计算总年龄
+        "total_age":{
+          "sum":{
+            "field":"age"
+          }
+        }
+      }
+    }
+  }, 
+  
+  "size": 0
+}
+
+
+
+17.  聚合分析 --- 嵌套分组  （先以性比分组，再以flowId分组）
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"match_all":{}
+			    }
+			],
+			"filter":{
+			   "bool":{
+			   	  "must":[
+			   	      {
+			   	      	"range": {
+				            "AGE": {
+				              "gte": 18,
+				              "lte": 20
+				            }
+			   	      	}
+			   	      }
+			   	  ]
+			   }	
+			}
+		}
+	},
+	"aggs":{
+		"group_by_sex":{          // 首先以性别分组
+			"terms":{
+				"field":"SEX.keyword"
+			},
+			"aggs":{                    
+				"total_age":{         //计算总年龄
+					"sum":{
+						"field":"AGE"
+					}
+				},
+				"avg_age":{        //计算平均年龄
+					"avg":{
+						"field":"AGE"
+					}
+				},
+				"max_age":{     //计算最大年龄
+					"max":{
+						"field":"AGE"
+					}
+				},
+			    "group_by_flowId":{     //再以flowId分组
+			    	"terms":{
+			    		"field":"FlowId.keyword"
+			    	}
+			    }
+			}
+		}
+	},
+	"size":0
+}
+以下是结果：
+{
+    "took": 972,
+    "timed_out": false,
+    "_shards": {
+        "total": 5,
+        "successful": 5,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": 44435,
+        "max_score": 0.0,
+        "hits": []
+    },
+    "aggregations": {
+        "group_by_sex": {
+            "doc_count_error_upper_bound": 0,
+            "sum_other_doc_count": 0,
+            "buckets": [
+                {
+                    "key": "男",
+                    "doc_count": 31659,
+                    "max_age": {
+                        "value": 20.0
+                    },
+                    "group_by_flowId": {
+                        "doc_count_error_upper_bound": 0,
+                        "sum_other_doc_count": 0,
+                        "buckets": [
+                            {
+                                "key": "4e6fbc1ff1ae452d9aa320f5121b7ba4",
+                                "doc_count": 18963
+                            },
+                            {
+                                "key": "0fcbda858bb8486588e615a3cc02d6e6",
+                                "doc_count": 12696
+                            }
+                        ]
+                    },
+                    "avg_age": {
+                        "value": 19.996841340535077
+                    },
+                    "total_age": {
+                        "value": 633080.0
+                    }
+                },
+                {
+                    "key": "女",
+                    "doc_count": 12595,
+                    "max_age": {
+                        "value": 20.0
+                    },
+                    "group_by_flowId": {
+                        "doc_count_error_upper_bound": 0,
+                        "sum_other_doc_count": 0,
+                        "buckets": [
+                            {
+                                "key": "4e6fbc1ff1ae452d9aa320f5121b7ba4",
+                                "doc_count": 6981
+                            },
+                            {
+                                "key": "0fcbda858bb8486588e615a3cc02d6e6",
+                                "doc_count": 5614
+                            }
+                        ]
+                    },
+                    "avg_age": {
+                        "value": 19.997379912663757
+                    },
+                    "total_age": {
+                        "value": 251867.0
+                    }
+                }
+            ]
+        }
+    }
+}
+
+
+
+18 . 聚合分析3 ：  并列分组
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"match_all":{}
+			    }
+			],
+			"filter":{
+			   "bool":{
+			   	  "must":[
+			   	      {
+			   	      	"range": {
+				            "AGE": {
+				              "gte": 18,
+				              "lte": 20
+				            }
+			   	      	}
+			   	      }
+			   	  ]
+			   }	
+			}
+		}
+	},
+	"aggs":{
+		"group_by_sex":{             // 以性别分组
+			"terms":{
+				"field":"SEX.keyword"
+			}
+		},
+		"group_by_flowId":{    //以flowId分组
+			"terms":{
+				"field":"FlowId.keyword"
+			}
+		}
+	},
+	"size":0
+}
+以下是结果：
+{
+    "took": 294,
+    "timed_out": false,
+    "_shards": {
+        "total": 5,
+        "successful": 5,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": 44438,
+        "max_score": 0.0,
+        "hits": []
+    },
+    "aggregations": {
+        "group_by_flowId": {
+            "doc_count_error_upper_bound": 0,
+            "sum_other_doc_count": 0,
+            "buckets": [
+                {
+                    "key": "4e6fbc1ff1ae452d9aa320f5121b7ba4",
+                    "doc_count": 25950
+                },
+                {
+                    "key": "0fcbda858bb8486588e615a3cc02d6e6",
+                    "doc_count": 18488
+                }
+            ]
+        },
+        "group_by_sex": {
+            "doc_count_error_upper_bound": 0,
+            "sum_other_doc_count": 0,
+            "buckets": [
+                {
+                    "key": "男",
+                    "doc_count": 31661
+                },
+                {
+                    "key": "女",
+                    "doc_count": 12596
+                }
+            ]
+        }
+    }
+}
+
+
+
+
+
+19：  单值分析    min,max，avg,sum，cardinality(类似sql里的distinct) 
+    示例：
+	{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"match_all":{}
+			    }
+			],
+			"filter":{
+			   "bool":{
+			   	  "must":[
+			   	      {
+			   	      	"range": {
+				            "AGE": {
+				              "gte": 18,
+				              "lte": 20
+				            }
+			   	      	}
+			   	      }
+			   	  ]
+			   }	
+			}
+		}
+	},
+	"aggs":{
+	    "count_sex":{
+	    	"cardinality":{
+	    		"field":"AGE"
+	    	}
+	    }
+	},
+	"size":0
+}
+
+
+
+
+20：多值分析：
+   stats:返回一系列数值类型的统计值，包含min、max、avg、sum和count
+   extended_stats：对stats的扩展，包含了更多的统计数据，比如方差、标准差等
+   示例：{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"match_all":{}
+			    }
+			],
+			"filter":{
+			   "bool":{
+			   	  "must":[
+			   	      {
+			   	      	"range": {
+				            "AGE": {
+				              "gte": 18,
+				              "lte": 20
+				            }
+			   	      	}
+			   	      }
+			   	  ]
+			   }	
+			}
+		}
+	},
+	"aggs":{
+	    "stats_sex":{
+	    	"extended_stats":{
+	    		"field":"AGE"
+	    	}
+	    }
+	},
+	"size":0
+}
+
+
+
+21:   聚合里面放filter
+{
+    "size": 0,
+    "query": {
+        "bool": {
+            "must": [
+                {
+                    "range": {
+                        "CreateTime": {
+                            "from": "2019-08-06",
+                            "to": "2019-08-13",
+                            "include_lower": true,
+                            "include_upper": true,
+                            "boost": 1
+                        }
+                    }
+                }
+            ],
+            "adjust_pure_negative": true,
+            "boost": 1
+        }
+    },
+    "aggs": {
+        "createtimeAggs": {
+            "date_histogram": {
+                "field": "CreateTime",
+                "format": "yyyy-MM-dd HH",
+                "interval": "1h",
+                "offset": 0,
+                "order": {
+                    "_key": "asc"
+                },
+                "keyed": false,
+                "min_doc_count": 0,
+                "extended_bounds": {
+                    "min": "2019-08-06 00",
+                    "max": "2019-08-13 23"
+                }
+            },
+            "aggs": {
+                "field_count": {
+                    "filter": {
+                        "exists": {
+                            "field": "FT_CreditMobileScore",
+                            "boost": 1
+                        }
+                    },
+                    "aggs": {
+                        "field_avg": {
+                            "avg": {
+                                "field": "FT_CreditMobileScore"
+                            }
+                        }
+                    }
+                },
+                "*-200": {
+                    "filter": {
+                        "range": {
+                            "FT_CreditMobileScore": {
+                                "lte": 200
+                            }
+                        }
+                    }
+                },
+                "200-600": {
+                    "filter": {
+                        "range": {
+                            "FT_CreditMobileScore": {
+                                "gte": 200,
+                                "lte": 600
+                            }
+                        }
+                    }
+                },
+                "600-*": {
+                    "filter": {
+                        "range": {
+                            "FT_CreditMobileScore": {
+                                "gte": 600
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+22: 聚合里面filter
+{
+	"query":{
+		"bool":{
+			"must":[
+			   {
+			   	  "match_all":{}
+			   }
+			],
+			"filter":{
+				"bool":{
+					"must":[
+					   {
+					   	  "range":{
+					   	  	"AGE":{
+					   	  		"gte":18,
+					   	  		"lte":25
+					   	  	}
+					   	  }
+					   }
+					]
+				}
+			}
+		}
+	},
+	"aggs":{
+	    "group_by_sex":{
+	    	"terms":{
+	    		"field":"SEX.keyword"
+	    	},
+	    	"aggs":{
+	    		"glt_25_age":{
+	    			"filter":{
+	    				"range":{
+	    					"AGE":{
+	    						"gte":25
+	    					}
+	    				}
+	    			}
+	    		}
+	    	}
+	    }
+	},
+	"size":0
+}
+
+
+23： 聚合实战
+{
+	"query":{
+		"bool":{
+			"must":[
+			   {
+			   	  "match_all":{}
+			   }
+			],
+			"filter":{
+				"bool":{
+					"must":[
+					   {
+					   	  "range":{
+					   	  	"CreateTime":{
+					   	  		"gte":"2019-08-01",
+					   	  		"lte":"2019-08-05"
+					   	  	}
+					   	  }
+					   }
+					]
+				}
+			}
+		}
+	},
+	"aggs":{
+	    "agg_time":{
+	    	"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		 "agg_apply_pass":{
+	    		 	"filter":{
+	    		 		"bool":{
+	    		 			"must":[
+	    		 			    {
+	    		 			    	"term":{
+	    		 			    			"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    		 			    	}
+	    		 			    },
+	    		 			    {
+	    		 			    	"term":{
+	    		 			    		"Result":1
+	    		 			    	}
+	    		 			    }
+	    		 			]
+	    		 		}
+	    		 	},
+	    		    "aggs":{
+	    		    	"agg_jianjun":{
+	    		    		"sum":{
+					    		"field":"RU_2_Amount"
+					    	}
+	    		    	}
+	    		    }
+	    		 },
+	    		 "agg_apply_amount":{
+				    	"sum":{
+				    		"field":"RU_2_Amount"
+				    	}
+				   }
+	    	}
+	    }
+	},
+	"size":0
+}
+
+
+
+-------------------------------------------------------------------------
+es 将集合分析主要分为4类：
+Bucket：分桶类型，类似SQL中的GROUP BY语法
+Metric：指标分析类型，如计算最大值、最小值、平均值等等
+Pipeline：管道分析类型，基于上一级的聚合分析结果进行在分析      --------暂时不知
+Matrix：矩阵分析类型               --------- 暂时不知
+
+
+1.Bucket分桶类型
+   terms: 如果是text类型，则按照分词后的结果分桶
+   range: 通过制定数值的范围来设定分桶规则
+   date_range: 通过指定日期的范围来设定分桶规则
+   historgram: 直方图，以固定间隔的策略来分割数据
+   date_histogram: 针对日期的直方图或者柱状图，是时序分析中常用的聚合分析类型
+
+
+2.Metric 指标类型
+   min    最小
+   max   最大
+   avg,   平均
+   sum， 求和
+   cardinality，  类似SQL中的distinct count
+   stats,     返回一系列数值类型的统计值
+   extended_stats， 
+   percentile,      百分位数统计
+   percentile_rank，百分位数统计
+   top_hits
+
+
+
+-------------------------------------------------------------------
+
+项目实际语句：
+-------    离散--------
+{
+	"query":{
+		"bool":{
+			"must":[
+			   {
+			   	  "match_all":{}
+			   }
+			],
+			"filter":{
+				"bool":{
+					"must":[
+					   {
+					   	  "range":{
+					   	  	"CreateTime":{
+					   	  		"gte":"2019-08-01",
+					   	  		"lte":"2019-08-05"
+					   	  	}
+					   	  }
+					   }
+					]
+				}
+			}
+		}
+	},
+	"aggs":{
+	    "agg_time":{
+	    	"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		"group_by_dimension":{
+	    			"terms":{
+	    				"field":"SEX.keyword"
+	    			},
+	    			"aggs":{
+	    				"agg_apply_pass":{
+	    					"filter":{
+	    						"bool":{
+	    							"must":[
+	    							    {
+	    							    	"term":{
+	    							    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    							    	}
+	    							    },
+	    							    {
+	    							    	"term":{
+	    							    		"Result":1
+	    							    	}
+	    							    }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"agg_jianjun":{
+	    							"sum":{
+	    								"field":"RU_2_Amount"
+	    							}
+	    						}
+	    					}
+	    				},
+	    				"agg_apply_amount":{
+	    					"sum":{
+	    						"field":"RU_2_Amount"
+	    					}
+	    				}
+	    			}
+	    		}
+	    	}
+	    }
+	},
+	"size":0
+}
+
+
+
+
+
+-----------------连续------------------
+{
+	"query":{
+		"bool":{
+			"must":[
+			   {
+			   	  "match_all":{}
+			   }
+			],
+			"filter":{
+				"bool":{
+					"must":[
+					   {
+					   	  "range":{
+					   	  	"CreateTime":{
+					   	  		"gte":"2019-08-01",
+					   	  		"lte":"2019-08-05"
+					   	  	}
+					   	  }
+					   }
+					]
+				}
+			}
+		}
+	},
+	"aggs":{
+	    "agg_time":{
+	    	"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		"18-20":{
+			    	"filter":{
+			    		"range":{
+			    			"AGE":{
+			    				"gte":18,
+			    				"lte":20
+			    			}
+			    		}
+			    	},
+			    	"aggs":{
+			    		"agg_apply_pass":{
+			    			"filter":{
+			    				"bool":{
+			    					"must":[
+			    					    {
+			    					    	"term":{
+			    					    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+			    					    	}
+			    					    },
+			    					    {
+			    					    	"term":{
+			    					    		"Result":1
+			    					    	}
+			    					    }
+			    					]
+			    				}
+			    			},
+			    			"aggs":{
+			    				"agg_jianjun":{
+			    					"sum":{
+			    						"field":"RU_2_Amount"
+			    					}
+			    				}
+			    			}
+			    		},
+			    		"agg_apply_amount":{
+			    			"sum":{
+			    				"field":"RU_2_Amount"
+			    			}
+			    		}
+			    	}
+			    },
+			    "20-25":{
+			    	"filter":{
+			    		"range":{
+			    			"AGE":{
+			    				"gte":20,
+			    				"lte":25
+			    			}
+			    		}
+			    	},
+			    	"aggs":{
+			    		"agg_apply_pass":{
+			    			"filter":{
+			    				"bool":{
+			    					"must":[
+			    					    {
+			    					    	"term":{
+			    					    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+			    					    	}
+			    					    },
+			    					    {
+			    					    	"term":{
+			    					    		"Result":1
+			    					    	}
+			    					    }
+			    					]
+			    				}
+			    			},
+			    			"aggs":{
+			    				"agg_jianjun":{
+			    					"sum":{
+			    						"field":"RU_2_Amount"
+			    					}
+			    				}
+			    			}
+			    		},
+			    		"agg_apply_amount":{
+			    			"sum":{
+			    				"field":"RU_2_Amount"
+			    			}
+			    		}
+			    	}
+			    }
+	    	}
+	    }
+	},
+	"size":0
+}
+
+
+
+
+
+
+
+------------------------------------------------query dsl综合查询---------------------------------
+
+1.无维度
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"range":{
+			    		"CreateTime":{
+			    			"gte":"2019-08-01",
+			    			"lt":"2019-08-15"
+			    		}
+			    	}
+			    }
+			]
+		}
+	},
+	"aggs":{
+		"agg_time":{
+			"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		"agg_apply_count":{
+	    			"filter":{
+	    				"bool":{
+	    					"must":[
+	    					    {
+	    					    	"term":{
+	    					    		"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+	    					    	}
+	    					    }
+	    					]
+	    				}
+	    			},
+	    			"aggs":{
+	    				 "uniq_apply_count":{
+			    	   		"cardinality":{
+			    	   				"field":"IdentityNo.keyword"
+			    	   		}
+			    		}
+	    			}
+	    		},
+	    		"agg_apply_amount":{
+	    			"filter":{
+	    				"bool":{
+	    					"should":[
+	    					    {
+	    					    	"term":{
+	    					    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    					    	}
+	    					    },
+	    					    {
+	    					    	"term":{
+	    					    		"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+	    					    	}
+	    					    }
+	    					]
+	    				}
+	    			},
+	    			"aggs":{
+	    				"sum_amount":{
+	    					"sum":{
+	    						"field":"RU_2_Amount"
+	    					}
+	    				}
+	    			}
+	    		},
+	    		"agg_apply_pass":{
+	    			"filter":{
+	    				"bool":{
+	    					"must":[
+	    					   {
+	    					   	  "term":{
+	    					   	  	"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    					   	  }
+	    					   },
+	    					   {
+	    					   	  "term":{
+	    					   	  	"Result":1
+	    					   	  }
+	    					   }
+	    					]
+	    				}
+	    			},
+	    		    "aggs":{
+	    		    	"uniq_apply_pass":{
+	    		    		"cardinality":{
+			    	   			"field":"IdentityNo.keyword"
+			    	   		}
+	    		    	},
+    		    		"agg_jianjun":{
+    		    			"sum":{
+    		    				"field":"RU_2_Amount"
+    		    			}
+    		    		
+    		    	    }
+	    		    }
+	    		
+	    		}
+	    	}
+		}
+		
+	},
+	"size":0
+}
+
+
+----------------------------------------
+2.有维度-----无分组
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"range":{
+			    		"CreateTime":{
+			    			"gte":"2019-08-01",
+			    			"lt":"2019-08-05"
+			    		}
+			    	}
+			    }
+			]
+		}
+	},
+	"aggs":{
+		"agg_time":{
+			"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		"agg_dimension":{
+	    			"terms":{
+	    				"field":"SEX.keyword"
+	    			},
+	    			"aggs":{
+		    			"agg_apply_count":{
+		    				"filter":{
+		    					"bool":{
+		    						"must":[
+		    						    {
+		    						    	"term":{
+		    						    		"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+		    						    	}
+		    						    }
+		    						]
+		    					}
+		    				},
+		    				"aggs":{
+		    					"uniq_apply_count":{
+		    						"cardinality":{
+		    							"field":"IdentityNo.keyword"
+		    						}
+		    					}
+		    				}
+		    			},
+		    			"agg_apply_amount":{
+		    				"filter":{
+		    					"bool":{
+		    						"should":[
+		    						   {
+		    						   	  "term":{
+		    						   	  	"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+		    						   	  }
+		    						   },
+		    						   {
+		    						   	  "term":{
+		    						   	  	"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+		    						   	  }
+		    						   }
+		    						]
+		    					}
+		    				},
+		    				"aggs":{
+		    					"sum_amount":{
+		    						"sum":{
+		    							"field":"RU_2_Amount"
+		    						}
+		    					}
+		    				}
+		    			},
+		    			"agg_apply_pass":{
+		    				"filter":{
+		    					"bool":{
+		    						"must":[
+		    						    {
+		    						    	"term":{
+		    						    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+		    						    	}
+		    						    },
+		    						    {
+		    						    	"term":{
+		    						    		"Result":1
+		    						    	}
+		    						    }
+		    						]
+		    					}
+		    				},
+		    				"aggs":{
+		    					"uniq_apply_pass":{
+		    						"cardinality":{
+		    							"field":"IdentityNo.keyword"
+		    						}
+		    					},
+		    					"agg_jianjun":{
+		    						"sum":{
+		    							"field":"RU_2_Amount"
+		    						}
+		    					}
+		    				}
+		    			}
+		    		}
+	    		}
+	    	}
+		}
+		
+	},
+	"size":0
+}
+
+
+3.有维度-----有分组 -----离散--------------
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"range":{
+			    		"CreateTime":{
+			    			"gte":"2019-08-01",
+			    			"lt":"2019-08-05"
+			    		}
+			    	}
+			    }
+			]
+		}
+	},
+	"aggs":{
+		"agg_time":{
+			"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		"女":{
+	    			"filter":{
+	    				"bool":{
+	    					"must":[
+	    					   {
+	    					   	 "term":{
+	    					   	 	"SEX.keyword":"女"
+	    					   	 }
+	    					   }
+	    					]
+	    				}
+	    			},
+	    			"aggs":{
+	    				"agg_apply_count":{
+	    					"filter":{
+	    						"bool":{
+	    							"must":[
+	    							   {
+	    							   	 "term":{
+	    							   	 	"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+	    							   	 }
+	    							   }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"uniq_apply_count":{
+	    							"cardinality":{
+	    								"field":"IdentityNo.keyword"
+	    							}
+	    						}
+	    					}
+	    				},
+	    				"agg_apply_amount":{
+	    					"filter":{
+	    						"bool":{
+	    							"should":[
+	    							   {
+	    							   	  "term":{
+	    							   	  	"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    							   	  }
+	    							   },
+	    							   {
+	    							   	  "term":{
+	    							   	  	"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+	    							   	  }
+	    							   }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"sum_amount":{
+	    							"sum":{
+	    								"field":"RU_2_Amount"
+	    							}
+	    						}
+	    					}
+	    				},
+	    				"agg_apply_pass":{
+	    					"filter":{
+	    						"bool":{
+	    							"must":[
+	    							    {
+	    							    	"term":{
+	    							    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    							    	}
+	    							    },
+	    							    {
+	    							    	"term":{
+	    							    		"Result":1
+	    							    	}
+	    							    }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"uniq_apply_pass":{
+	    							"cardinality":{
+	    								"field":"IdentityNo.keyword"
+	    							}
+	    						},
+	    						"agg_jianjun":{
+	    							"sum":{
+	    								"field":"RU_2_Amount"
+	    							}
+	    						}
+	    					}
+	    				}
+	    			}
+	    		}
+	    	}
+		}
+	},
+	"size":0
+}
+
+
+
+4.有维度-----有分组 ----连续
+{
+	"query":{
+		"bool":{
+			"must":[
+			    {
+			    	"range":{
+			    		"CreateTime":{
+			    			"gte":"2019-08-01",
+			    			"lt":"2019-08-05"
+			    		}
+			    	}
+			    }
+			]
+		}
+	},
+	"aggs":{
+		"agg_time":{
+			"date_histogram":{
+	    		"field": "CreateTime",
+                "format": "yyyy-MM-dd",
+                "interval": "day"
+	    	},
+	    	"aggs":{
+	    		"18-20":{
+	    			"filter":{
+	    				"range":{
+	    					"AGE":{
+	    						"gte":20,
+	    						"lt":25
+	    					}
+	    				}
+	    			},
+	    			"aggs":{
+	    				"agg_apply_count":{
+	    					"filter":{
+	    						"bool":{
+	    							"must":[
+	    							   {
+	    							   	 "term":{
+	    							   	 	"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+	    							   	 }
+	    							   }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"uniq_apply_count":{
+	    							"cardinality":{
+	    								"field":"IdentityNo.keyword"
+	    							}
+	    						}
+	    					}
+	    				},
+	    				"agg_apply_amount":{
+	    					"filter":{
+	    						"bool":{
+	    							"should":[
+	    							   {
+	    							   	  "term":{
+	    							   	  	"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    							   	  }
+	    							   },
+	    							   {
+	    							   	  "term":{
+	    							   	  	"FlowId":"4e6fbc1ff1ae452d9aa320f5121b7ba4"
+	    							   	  }
+	    							   }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"sum_amount":{
+	    							"sum":{
+	    								"field":"RU_2_Amount"
+	    							}
+	    						}
+	    					}
+	    				},
+	    				"agg_apply_pass":{
+	    					"filter":{
+	    						"bool":{
+	    							"must":[
+	    							    {
+	    							    	"term":{
+	    							    		"FlowId":"0fcbda858bb8486588e615a3cc02d6e6"
+	    							    	}
+	    							    },
+	    							    {
+	    							    	"term":{
+	    							    		"Result":1
+	    							    	}
+	    							    }
+	    							]
+	    						}
+	    					},
+	    					"aggs":{
+	    						"uniq_apply_pass":{
+	    							"cardinality":{
+	    								"field":"IdentityNo.keyword"
+	    							}
+	    						},
+	    						"agg_jianjun":{
+	    							"sum":{
+	    								"field":"RU_2_Amount"
+	    							}
+	    						}
+	    					}
+	    				}
+	    			}
+	    		}
+	    	}
+		}
+	},
+	"size":0
+}
+
+
+
+
+
+
+
