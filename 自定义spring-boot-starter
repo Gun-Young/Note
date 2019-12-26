@@ -1,0 +1,142 @@
+自定义spring boot starter
+
+spring boot 提供的starter是以spring-boot-starter-xxx。官方建议自定义的starter使用 xxx-spring-boot-starter命名规则，以区分springboot生态提供的starter
+
+1. 新建工程，命名为demo-spring-boot-starter
+
+
+2. pom文件添加依赖
+        <dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter</artifactId>
+		</dependency>
+
+        <!--spring默认使用yml中的配置，但有时候要用传统的xml或properties配置，就需要使用spring-boot-configuration-processor了-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-configuration-processor</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+3.新建一个类映射配置文件信息
+			package com.young.test.demospringbootstarter.properties;
+			import org.springframework.boot.context.properties.ConfigurationProperties;
+			/**
+			 * 使用@ConfigurationProperties可以将配置文件映射成java类
+			 */
+			@ConfigurationProperties(prefix = "demo")
+			public class DemoProperties {
+
+				private String sayWhat;
+				private String toWho;
+
+				public String getSayWhat() {
+					return sayWhat;
+				}
+
+				public void setSayWhat(String sayWhat) {
+					this.sayWhat = sayWhat;
+				}
+
+				public String getToWho() {
+					return toWho;
+				}
+
+				public void setToWho(String toWho) {
+					this.toWho = toWho;
+				}
+			}
+
+
+4.定义一个service
+			package com.young.test.demospringbootstarter.service;
+			public class DemoService {
+				public String sayWhat;
+				public String toWho;
+
+				public DemoService(String sayWhat, String toWho) {
+					this.sayWhat = sayWhat;
+					this.toWho = toWho;
+				}
+
+				public String say(){
+					return this.sayWhat+"!  "+toWho;
+				}
+			}
+
+
+
+5.定义一个配置类
+			package com.young.test.demospringbootstarter.config;
+			import com.young.test.demospringbootstarter.properties.DemoProperties;
+			import com.young.test.demospringbootstarter.service.DemoService;
+			import org.springframework.beans.factory.annotation.Autowired;
+			import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+			import org.springframework.boot.context.properties.ConfigurationProperties;
+			import org.springframework.boot.context.properties.EnableConfigurationProperties;
+			import org.springframework.context.annotation.Bean;
+			import org.springframework.context.annotation.Configuration;
+			/**
+			 * 被注解的类内部包含一个或多个@Bean注解方法
+			 * 可以被AnnotationConfigApplicationContext或者AnnotationConfigWebApplicationContext 进行扫描。
+			 * 用于构建bean定义以及初始化Spring容器。
+			 */
+			@Configuration
+			/**
+			 * 该注解使写有@ConfigurationProperties注解的类生效
+			 *
+			 * 如果一个配置类只配置@ConfigurationProperties注解，而没有使用@Component，那么在IOC容器中获取不到peoperties
+			 * 配置文件转化的bean。使用@EnableConfigurationProperties相当于把使用@ConfigurationProperties的类进行了
+			 * 一次注入
+			 */
+			@EnableConfigurationProperties(DemoProperties.class)
+			/**
+			 * spring boot使用通过@ConditionalOnProperty来控制@Configuration是否生效
+			 *
+			 * 通过其两个属性name和havingValue来实现。其中name是用来从application.properties中读取某个属性值.
+			 * 如果该值为空，则返会false;
+			 * 如果不为空则。将该值与havingValue指定的值进行比较，如果一样则返回true,否则返回false;
+			 * 如果返回false,则该configuration不生效，为true则生效
+			 */
+			@ConditionalOnProperty(prefix = "demo",name="isopen",havingValue = "true")
+			public class DemoConfig {
+
+				@Autowired
+				private DemoProperties demoProperties;
+
+				@Bean
+				public DemoService demoService(){
+					return new DemoService(demoProperties.getSayWhat(),demoProperties.getToWho());
+				}
+			}
+
+
+
+6.在根目录下新建META-INF文件夹，然后创建spring.factories,增加如下配置
+			#----- start自动装配-------
+			org.springframework.boot.autoconfigure.EnableAutoConfiguration=com.young.test.demospringbootstarter.config.DemoConfig
+
+
+
+7.将自定义starter 做成jar包，在测试项目中进行引用
+
+      （1） 配置文件添加配置
+		    demo.isopen=true
+			demo.say-what=hello
+			demo.to-who=zhangsan
+			
+		(2)  写测试类
+			@RestController
+			public class TestController {
+
+				@Autowired
+				private DemoService demoService;
+
+				 @GetMapping(value = "/fun1")
+				 public void fun1(){
+					 System.out.println(demoService.say());
+				 }
+
+			}
+
+
