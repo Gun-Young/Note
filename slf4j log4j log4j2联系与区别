@@ -1,0 +1,55 @@
+日志组件之间的关系  slf4j  log4j  log4j2  logback
+
+
+1.slf4j
+    slf4j仅仅是一个为java程序日志提供输出的统一接口，并不是一个具体的日志方案，就像jdbc，只是一种规则，
+	所以单独的slf4j是不能工作的，必须搭配其他具体的日志实现方案，比如log4j或log4j2
+	
+	使用slf4j的API：(导入的是slf4j的Logger,使用jar包比如：slf4j-api-1.6.4.jar)
+	private static Logger logger = LoggerFactory.getLogger(XXX.class);
+	
+	slf4j是接口，而log4j，log4j2, logback是具体实现，所以使用api的时候，尽量使用slf4j的API
+	
+	
+2.log4j
+   如果在系统中单独使用log4j的话，我们只需要引入log4j的核心包就可以了,比如: log4j-1.2.17.jar
+   使用log4j的API：
+   private static final org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(xxx.class);
+   
+	
+3.log4j2
+    如果在系统中单独使用log4j2的话。我们只需要引入log4j2的核心包就可以了，比如log4j-api-2.7.jar和log4j-core-2.7.jar
+	使用log4j2的API:
+	private static org.apache.logging.log4j.Logger logger = org.apache.logging.log4j.LogManager.getLogger(xxx.class);
+	
+	
+	
+4.log4j和log4j2的区别
+   1.获取Logger的api不一样，log4j的api为org.apache.log4j.Logger,而log4j2得api为org.apache.logging.log4j.Logger
+   2.配置方式不一样,log4j2对properties得支持不是很好，它得格式一般为xml格式或者yaml格式
+   3.log4j2在多线程环境下性能会远远优于log4j和logback(官方数据是10倍以上)
+   
+   
+ 5.slf4j+log4j
+   在系统中需要使用slf4j和log4j来进行日志，需要引入的jar包如下：
+   log4j核心包：log4j-1.2.17.jar
+   slf4j核心包： slf4j-api-1.6.4.jar
+   slf4j与log4j的桥接包： slf4j-log4j12-1.6.1.jar,这个包的作用就是使用slf4j的api，但底层实现是基于log4j
+   使用slf4j的API：
+   private static Logger logger = LoggerFactory.getLogger(xxx.class);
+   
+   
+ 6.slf4j+log4j2
+    在系统中需要使用slf4j和log4j2来进行日志，需要引入的jar包如下：
+    log4j2核心包：log4j-api-2.7.jar和log4j-core-2.7.jar
+    slf4j核心jar包：slf4j-api-1.6.4.jar
+	slf4j与log4j2的桥接包：log4j-slf4j-impl-2.7.jar,这个包的作用就是使用slf4j的api，但底层实现是基于log4j2
+	 使用slf4j的API：
+    private static Logger logger = LoggerFactory.getLogger(xxx.class);
+
+7. 将slf4j+log4j不修改代码升级到slf4j+log4j2
+    ** 删除log4j核心包：log4j-1.2.17.jar 和 slf4j与log4j的桥接包： slf4j-log4j12-1.6.1.jar
+    ** 增加  log4j2核心包：log4j-api-2.7.jar和log4j-core-2.7.jar 和 slf4j与log4j2的桥接包：log4j-slf4j-impl-2.7.jar
+    由于都是使用的slf4j的api，所以代码不需要改动
+
+
