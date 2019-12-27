@@ -1,0 +1,379 @@
+参考文章： https://www.cnblogs.com/hafiz/p/9120267.html
+
+
+
+一.先从spring ioc说起
+     
+	 1.我们经常说的spring IOC其实是spring框架给我们提供的IOC容器实现（IOC Container），下面是一个经典案例：
+	 public static void main(String[] args){
+	     ApplicationContext context = new FileSystemXmlApplicationContext("config-file-path");
+		 DemoService service = context.getBean(DemoService.class);
+		 service.doSomething();
+	 }
+	 
+	 2.spring IOC容器的依赖注入工作分为两步：
+	 
+			 阶段一： 收集和注册Bean
+			  在这个阶段中，开发者通过XML或Java代码的方式来定义bean,然后以手动组装或让容器基于特定的机制自动扫描，将这些定义好得
+			 bean收集到IOC容器中
+			 **假如以XML配置得方式来收集和注册如下一个单一得bean,一般形式如下：
+			 <bean id="DemoService" class="x.x.x.DemoService">
+				...
+			 </bean>
+			 **随着项目中bean越来越多，这样逐个手动配置很麻烦。我们还可以使用如下方式配置来批量扫描并采集和注册一批bean
+			 <context:component-scan  base-package="x.x.x"/>
+			 这种扫描得方式可以采集到注解有@Component，和@Service等得java类
+			 
+			 
+			 阶段二：分析和组装
+				   在第一阶段完成后，我们可以暂时认为IOC容器中保存着一个个相互独立得bean,它们之间还没有任何关系，但是实际项目中它们之间
+			 是有着不可或缺的关系，所以呢，IOC容器第二阶段需要做得工作就是分析这些已经在IOC容器中得bean,根据它们得依赖关系按先后顺序
+			 组装它们，工作原理是这样得：IOC容器发现一个bean依赖另一个bean,那么它会将另一个bean注入给依赖它得那个bean,一直到所有的
+			 bean的依赖都完成注入。这时候容器中所有的bean都已经准备好，也就标志着整个IOC容器的工作完成。
+	 
+     3. javaconfig 是什么？
+	        javaconfig其实就是xml配置文件的java表现形式。
+		 （1）表现形式
+		         xml方式：
+				    <?xml version="1.0" encoding="UTF-8"?>
+					<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+						   xmlns="http://www.springframework.org/schema/beans"         
+						   xmlns:context="http://www.springframework.org/schema/context"
+						   xsi:schemaLocation="http://www.springframework.org/schema/beans
+							 http://www.springframework.org/schema/beans/spring-beans-4.0.xsd 
+							 http://www.springframework.org/schema/context 
+							 http://www.springframework.org/schema/context/spring-context.xsd">
+						// bean定义
+					</beans>
+				java方式：
+				   @Configuration
+					public class DemoConfiguration {
+						// bean定义
+					}
+
+       （2）注册bean
+	            xml方式：
+					<bean id="demoService" class="x.x.DemoServiceImpl">
+						...
+					</bean>
+				java方式：
+				@Configuration
+				public class DemoConfiguration {
+					@Bean
+					public DemoService demoService() {
+						return new DemoServiceImpl();
+					}
+				}
+              也就是说任何一个标注了@Bean注解的方式，它的返回值就将作为一个bean定义注册到spring的IOC容器中，方法名将默认成为
+			  该bean在容器中的id。
+			  
+		(3) 表达依赖注入关系
+		      xml配置形式：
+					<bean id="aService" class="x.x.AServiceImpl">
+					<bean id="bService" class="x.x.BServiceImpl">
+						<property name="dependencyService" ref="aService"/>
+					</bean>
+			java形式：
+					@Configuration
+					public class DemoConfiguration {
+						@Bean
+						public AService aService() {
+							return new AServiceImpl();
+						}
+						@Bean
+						public BService bService() {
+							return new BServiceImpl(aService());
+						}
+					}
+					也就是说如果一个bean定义了依赖其他bean,就直接调用其对应javaconfig类中依赖bean的创建方法即可。
+					
+			
+     3.常用的Annotation
+	     (1) @ComponentScan
+		       该注解对应的是XML配置中的<context:component-scan>元素，用于配合一些元信息java annotation,比如@Component,
+			   @Repository,@Service等，将标注了这些注解的bean定义类批量采集到Spring的IOC容器中。
+			   我们可以通过basepackage等属性来细粒度的定制该注解自动扫描的范围，如果没有指定的话，则默认Spring框架会从声明
+			   @ComponentScan注解所在类的package进行扫描。
+			   
+			   
+	（2）@PropertySource和@PropertySources
+	          注解@PropertySource用来从指定的地方来加载.properties配置文件，并且将其中的数据加载IOC容器中，以便我们能用来
+			  填充一些bean定义的属性占位符（placeholder,当然它的实现需要PropertySourcesPlaceHolderConfigurer的配合
+			  
+			    ** 如果我们使用的是java8或以上版本，我们可以并行声明对各@PropertySource
+			    @Configuration
+				@PropertySource("classpath:1.properties")
+				@PropertySource("classpath:2.properties")
+				@PropertySource("...")
+				public class XConfiguration {
+					...
+				}
+								
+				** 如果使用低于java8的版本，就必须使用@PropertySources注解来声明多个@PropertySource
+				@Configuration
+				@PropertySources({
+					@PropertySource("classpath:1.properties"),
+					@PropertySource("classpath:2.properties"),
+					...
+				})
+				public class XConfiguration {
+					...
+				}
+				
+				**使用示例如下：
+				java类：
+				  @Component
+				  @PropertySource("classpath:db.properties")
+				  public class DBConnection {
+
+					@Value("${DB_DRIVER_CLASS}")
+					private String driverClass;
+
+					@Value("${DB_URL}")
+					private String dbUrl;
+
+					@Value("${DB_USERNAME}")
+					private String userName;
+
+					@Value("${DB_PASSWORD}")
+					private String password;
+
+					public DBConnection(){}
+
+					public void printDBConfigs(){
+					  System.out.println("Db Driver Class = " + driverClass);
+					  System.out.println("Db url = " + dbUrl);
+					  System.out.println("Db username = " + userName);
+					  System.out.println("Db password = " + password);
+					}
+				  }
+				db.properties配置文件：
+				DB_DRIVER_CLASS=com.mysql.jdbc.Driver
+				DB_URL=jdbc:mysql://localhost:3306/test
+				DB_USERNAME=cxuan
+				DB_PASSWORD=111111
+				APP_NAME=PropertySourceExample
+
+
+        （3）@Import和@ImportSource
+					*** 在以前XML配置方式中，我们可以通过<import resource="xxx.xml"/>来将多个分开的容器配置合并到一个配置中，在JavaConfig形式的配置中，
+					 我们可以使用@Import这个注解完成同样的目的:
+						@Configuration
+						@Import(DemoConfiguration.class)
+						public class XConfiguration {
+							...
+						}
+
+					***注解@Import只能将以JavaConfig形式定义的配置引入到IoC容器，而若我们有一些以前遗留的配置或者遗留的系统需要以XML形式来配置(如Dubbo框架)，
+					我们就需要使用@ImportSource注解来将它们一起合并到以JavaConfig配置形式配置的容器中:
+					@Configuration
+					@Import
+					@ImportSource(...)
+					public class XConfiguration {
+						...
+					}
+                   可参考： https://blog.csdn.net/pange1991/article/details/81356594
+              
+           
+
+
+
+
+二.@SpringBootApplication和SpringAppliation.run()
+    
+	1.@SpringBootApplication
+	   由源码所知，@SpringBootApplication主要起作用的是@SpringBootConfiguration，@EnableAutoConfiguration和@ComponentScan注解组成。
+	   所以启动类改写如下方式，这个spring boot应用依然可以启动
+	    @SpringBootConfiguration
+		@EnableAutoConfiguration
+		@ComponentScan(excludeFilters = {
+				@Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class),
+				@Filter(type = FilterType.CUSTOM, classes = AutoConfigurationExcludeFilter.class) })
+		public class SpringbootDemoApplication {
+			public static void main(String[] args) {
+				SpringApplication.run(SpringbootDemoApplication.class, args);
+			}
+		}
+	
+	
+	2.@SpringBootConfiguration
+	   由@SpringBootConfigurationui源码所知，主要起作用的是@Configuration，只是包装重新命名了，功能和@Configuration一模一样，
+	   springboot的启动类标注了这个注解，毫无疑问，它本身也是哥IOC容器的配置类（配置文件）。
+	   
+	 
+	 
+   3.@EnableAutoConfiguration
+       该注解是借助@Import将所有符合配置条件的bean定义加载到IOC容器中，在源码中，最关键的就是@Import(AutoConfigurationImportSelector.class)，
+	   @Import注解会将AutoConfigurationImportSelector实例化并注入到容器中，它借助AutoConfigurationImportSelector.class可以帮助Spring boot应用
+	   将所有符合条件的@Configuration配置类都加载到当前SpringBoot创建并使用的IoC容器。
+	   
+	   由AutoConfigurationImportSelector.java源码（部分源码如下）
+	   public class AutoConfigurationImportSelector  implements DeferredImportSelector, BeanClassLoaderAware, ResourceLoaderAware,	BeanFactoryAware, EnvironmentAware, Ordered {
+			protected List<AutoConfigurationImportFilter> getAutoConfigurationImportFilters() {
+				return SpringFactoriesLoader.loadFactories(AutoConfigurationImportFilter.class,
+						this.beanClassLoader);
+			}
+			protected List<AutoConfigurationImportListener> getAutoConfigurationImportListeners() {
+				return SpringFactoriesLoader.loadFactories(AutoConfigurationImportListener.class,
+						this.beanClassLoader);
+			}
+		}
+	  
+	   以上源码可以看出，@EnableAutoConfiguration是借助SpringFactoriesLoader的支持，才能完成。
+	  
+	
+	4.SpringFactoriesLoader
+         SpringFactoriesLoader是属于spring框架专属的一种扩展方案（功能类似java.util.ServiceLoader）,主要功能就是从指定的配置文件META-INF/spring.factories文件
+		 中加载配置，spring.factories是一个非常经典的java properties文件，内容是key(接口) = value(实现类)。
+		 @EnableAutoConfiguration能实现自动配置的原理就是：SpringFactoriesLoader从classpath中搜寻所有META-INF/spring.fatories文件，
+		 并将其中Key[org.springframework.boot.autoconfigure.EnableAutoConfiguration]对应的Value配置项通过反射的方式实例化为对应的标注了
+		 @Configuration的JavaConfig形式的IoC容器配置类，然后汇总到当前使用的IoC容器中。
+
+
+
+
+三. spring boot 扩展点
+    
+	 
+	 1.spring boot启动过程的关键事件（按照触发顺序）
+	  （1）开始启动
+	  （2）Environment构建完成
+	  （3）ApplicationContext构建完成
+	  （4）ApplicationContext完成加载
+	  （5）ApplicationContext完成刷新并启动
+	  （6）启动完成
+	  （7）启动失败
+	
+	
+	 2. SpringApplicationRunListener
+	       参考文章：https://www.jianshu.com/p/b86a7c8b3442，https://www.cnblogs.com/hafiz/p/9155017.html
+	 
+	              SpringApplicationRunListener接口的作用主要就是在Spring Boot启动初始化的过程中可以通过SpringApplicationRunListener接口
+		  回调来让用户在启动的各个流程中可以加入自己的逻辑。
+		  
+		          对于开发者来说，基本没有什么常见的场景要求我们必须实现一个自定义的SpringApplicationRunListener,即使是SpringBoot中也只默认
+  		 实现了一个org.springframework.boot.context.eventEventPublishingRunListener,用来在SpringBoot的整个启动流程中的不同时间点发布
+		 不同类型的应用事件(SpringApplicationEvent)。那些对这些应用事件感兴趣的ApplicationListener可以接受并处理（这也解释了为什么在
+		 SpringApplication实例化的时候加载了一批ApplicationListener,但是run方法执行的过程中并没有被使用）
+		  
+		   （1）下面是SpringApplicationRunListener接口定义
+					package org.springframework.boot;
+					public interface SpringApplicationRunListener {
+
+						// 在run()方法开始执行时，该方法就立即被调用，可用于在初始化最早期时做一些工作
+						void starting();
+						// 当environment构建完成，ApplicationContext创建之前，该方法被调用
+						void environmentPrepared(ConfigurableEnvironment environment);
+						// 当ApplicationContext构建完成时，该方法被调用
+						void contextPrepared(ConfigurableApplicationContext context);
+						// 在ApplicationContext完成加载，但没有被刷新前，该方法被调用
+						void contextLoaded(ConfigurableApplicationContext context);
+						// 在ApplicationContext刷新并启动后，CommandLineRunners和ApplicationRunner未被调用前，该方法被调用
+						void started(ConfigurableApplicationContext context);
+						// 在run()方法执行完成前该方法被调用
+						void running(ConfigurableApplicationContext context);
+						// 当应用运行出错时该方法被调用
+						void failed(ConfigurableApplicationContext context, Throwable exception);
+					}
+
+            （2）自定义SpringApplicationRunListener
+					package com.young.test.spidemo.ext;
+					import org.springframework.boot.SpringApplication;
+					import org.springframework.boot.SpringApplicationRunListener;
+					import org.springframework.context.ConfigurableApplicationContext;
+					import org.springframework.core.env.ConfigurableEnvironment;
+					public class HelloApplicationRunListener implements SpringApplicationRunListener {
+
+                         //自定义时，必须提供一个包含（SpringApplication application,String[] args的构造方法
+						public HelloApplicationRunListener(SpringApplication application,String[] args) {
+							System.out.println("构造器初始化-----");
+						}
+
+						@Override
+						public void starting() {
+							System.out.println("starting-----");
+						}
+
+						@Override
+						public void environmentPrepared(ConfigurableEnvironment environment) {
+							System.out.println("environmentPrepared-----");
+						}
+
+						@Override
+						public void contextPrepared(ConfigurableApplicationContext context) {
+							System.out.println("contextPrepared-----");
+						}
+
+						@Override
+						public void contextLoaded(ConfigurableApplicationContext context) {
+							System.out.println("contextLoaded-----");
+						}
+
+						@Override
+						public void started(ConfigurableApplicationContext context) {
+							System.out.println("started-----");
+						}
+
+						@Override
+						public void running(ConfigurableApplicationContext context) {
+							System.out.println("running-----");
+						}
+
+						@Override
+						public void failed(ConfigurableApplicationContext context, Throwable exception) {
+							System.out.println("failed-----");
+						}
+					}
+                    并在META-INF/spring.factories配置
+					org.springframework.boot.SpringApplicationRunListener=com.young.test.spidemo.ext.HelloApplicationRunListener
+
+
+
+
+       3.  ApplicationListener
+	        (1) 作用：当我们使用spring boot项目开发的时候，碰到应用启动后做一些初始化操作，可以使用ApplicationListener
+			          
+					  如果在上下文中部署了一个实现ApplicationListener接口的bean,那么每当在一个ApplicationEvent发布到ApplicationContext时。
+					  这个bean会得到通知
+			
+			(2) 支持的事件类型
+			      ApplicationFailedEvent:springboot 启动异常时执行事件
+				  ApplicationPreparedEvent:spring boot上下文context创建完成，但此时spring中的bean是没有完全加载完成的
+				  ApplicationReadyEvent: 上下文已经准备完毕的时候触发
+				  ApplicationStartedEvent:  spring boot启动时执行的事件
+				  SpringApplicationEvent: 获取SpringApplication
+				  ApplicationEnvironmentPreparedEvent: spring boot对应Enviroment已经准备完毕，但此时上下文context还没有创建
+				  
+		 （3） 自定义ApplicationListener
+					package com.young.test.spidemo.ext;
+					import org.springframework.boot.context.event.ApplicationReadyEvent;
+					import org.springframework.context.ApplicationListener;
+					public class MyApplicaitionListenerDemo implements ApplicationListener<ApplicationReadyEvent> {
+
+						@Override
+						public void onApplicationEvent(ApplicationReadyEvent applicationReadyEvent) {
+							System.out.println("自定义事件监听启动-------");
+						}
+					}
+
+				 
+          （4）加入自定义的ApplicationListener
+		            ** 启动类中添加：SpringApplication.addListeners(...)或者SpringApplication.setListener(...)方法添加一个或多个自定义的ApplicationListener，
+					     注意需要添加@Component，将自定义的ApplicationListener实例化到容器中。
+					** 借助SpringFactoriesLoader机制，在SpringBoot的项目自定义的META-INF/spring.factories文件中添加配置
+
+
+   在日常工作中，我们可能需要实现一些SDK或者Spring Boot Starter给被人使用时，
+   我们就可以使用Factories机制。Factories机制可以让SDK或者Starter的使用只需要很少或者不需要进行配置，只需要在服务中引入我们的jar包即可
+
+
+
+
+
+
+
+
+
+
+
+
