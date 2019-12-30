@@ -1,0 +1,98 @@
+基于spring boot的监听事件，收集spring boot所有的RequestMapping 中的url
+
+应用场景： 在权限管理的系统中，需要管理URL的权限，手动添加Url太过麻烦。可以添加一个依赖包，自动扫描所有的url,在项目启动的时候，就上报到
+    权限系统，这样就不用手动添加Url了。自动获取Url的依赖包做法如下：
+
+
+
+1. 监听上下文初始化完事件
+		public class MappingUrlsListener implements ApplicationListener<ApplicationReadyEvent> {
+
+			public MappingUrlsListener(){
+				System.out.println("实例化了----------");
+			}
+
+
+			/**
+			 * 监听上下文事件
+			 *
+			 * @param event
+			 */
+			@Override
+			public void onApplicationEvent(ApplicationReadyEvent event) {
+				getAllMappings(event);
+			}
+
+			/**
+			 * 获取所有的url
+			 *
+			 * @param event
+			 */
+			public void getAllMappings(ApplicationReadyEvent event) {
+				RequestMappingHandlerMapping mapping = event.getApplicationContext().getBean(RequestMappingHandlerMapping.class);
+				Map<RequestMappingInfo, HandlerMethod> map = mapping.getHandlerMethods();
+				for (RequestMappingInfo info : map.keySet()) {
+					Set<String> urls = info.getPatternsCondition().getPatterns();
+					for (String url : urls) {
+						System.out.println("url:" + url);
+					}
+				}
+			}
+		}
+
+
+2. 在classpath下新建META-INF/spring.factories文件
+    添加内容：
+	org.springframework.context.ApplicationListener=com.young.test.mappingurls.listener.MappingUrlsListener
+
+
+3. pom依赖
+      <?xml version="1.0" encoding="UTF-8"?>
+			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+				xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+				<modelVersion>4.0.0</modelVersion>
+				<parent>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-parent</artifactId>
+					<version>2.2.2.RELEASE</version>
+					<relativePath/> <!-- lookup parent from repository -->
+				</parent>
+				<groupId>com.young.test</groupId>
+				<artifactId>mapping-urls</artifactId>
+				<version>0.0.1-SNAPSHOT</version>
+				<name>mapping-urls</name>
+				<description>Demo project for Spring Boot</description>
+
+				<properties>
+					<java.version>1.8</java.version>
+				</properties>
+
+				<dependencies>
+				    <!--只需要添加spring-boot-starter-web依赖 -->
+					<dependency>
+						<groupId>org.springframework.boot</groupId>
+						<artifactId>spring-boot-starter-web</artifactId>
+					</dependency>
+				</dependencies>
+
+				<build>
+					<plugins>
+					   <!-- 注意使用maven的编译插件 -->
+						<plugin>
+							<groupId>org.apache.maven.plugins</groupId>
+							<artifactId>maven-compiler-plugin</artifactId>
+							<configuration>
+								<source>1.8</source>
+								<target>1.8</target>
+							</configuration>
+						</plugin>
+					</plugins>
+				</build>
+			</project>
+
+4. 在其他项目中只需要依赖该插件，项目启动后，就可以收集到RequestMapping数据
+
+
+
+
+
