@@ -1,0 +1,1090 @@
+
+
+-----------------------------------规则引擎------Drools--------------------
+一. 规则的编译与运行
+    
+	 规则的编译与运行要通过Drools的各种API来实现，主要分为三类： 规则编译，规则收集，规则执行
+	
+    (1): KnowledgeBuilder
+          规则编写完成后，下一步就是在代码中调用这些规则，利用这些帮助我们处理业务问题，KnowledgeBuilder的作用
+		  就是用来在业务代码中收集已经编写好的规则，然后对这些规则文件进行编译，最终产生一批编译好的规则包给其他
+		  的应用程序使用。可以使用hasErrors()方法得到编译规则过程中发现规则是否错误，打印出来，帮我们找到规则的
+		  错误信息。 使用方法如下：
+		   public static void makeKiePackages(){
+				//1.获取KnowledgeBuilder
+				KnowledgeBuilder knowledgeBuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
+
+				//2.通过KnowledgeBuilder编译的规则文件的类型可以有很多种，如.drl文件，.dslr文件，或xls文件等
+				//产生的规则包可以是具体的规则文件形成的，也可以是规则流文件形成的，在添加规则文件时，需要通过使用ResourceType的枚举值类执行规则文件的类型;
+				//在指定规则文件的时候，drools提供了一个名为ResourceFactory的对象，通过该对象可以实现从Classpath，URL,File,ByteArray,Reader或XLS的二进制文件里加载规则
+				knowledgeBuilder.add(ResourceFactory.newClassPathResource("droolRule/param-check-one.drl",Test1.class), ResourceType.DRL);
+
+				//3.检查规则中是否存在错误
+				if(knowledgeBuilder.hasErrors()){
+					System.out.println("规则中存在错误，错误消息如下：");
+					KnowledgeBuilderErrors knowledgeBuilderErrors = knowledgeBuilder.getErrors();
+					for(Iterator iterator = knowledgeBuilderErrors.iterator(); iterator.hasNext();){
+						System.out.println(iterator.next());
+					}
+				}
+
+				//4.产生规则包的集合
+				Collection<KiePackage> kiePackages = knowledgeBuilder.getKnowledgePackages();
+			}
+		  
+		  
+		  
+	 （2）KnowledgeBase
+	          KnowledgeBase是Drools提供用来收集应用当中知识（knewledge）定义的知识库对象，在一个KnowledgeBase当中
+			  可以包含普通的规则，规则流，函数定义，用户自定义对象等
+                public void makeKonwBase(){
+					//1.创建一个KieBaseConfiguration对象，它是用来存放规则引擎运行时相关环境参数定义的配置对象
+					//使用KnowledgeBaseFactory.newKnowledgeBaseConfiguration()创建KieBaseConfiguration对象默认会加载
+					//drools-core-xxx.jar包下的META-INF/drools.default.rulebase.conf文件里的规则运行环境配置信息，加载完成后，
+					//我们可以在代码中对这些默认的信息进行重新赋值，已覆盖加载的默认值
+					KieBaseConfiguration configuration = KnowledgeBaseFactory.newKnowledgeBaseConfiguration();
+					configuration.setProperty("org.drools.sequential","true");
+
+					//2.创建KnowledgeBase
+					InternalKnowledgeBase kbase = KnowledgeBaseFactory.newKnowledgeBase(configuration);
+				}
+
+
+
+        （3）KnowledgeBase添加KnowledgePackage集合
+		           public void test3(){
+						KnowledgeBuilder knowledgeBuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
+						knowledgeBuilder.add(ResourceFactory.newClassPathResource("droolRule/param-check-one.drl",Test1.class), ResourceType.DRL);
+						if(knowledgeBuilder.hasErrors()){
+							System.out.println("规则中存在错误，错误消息如下：");
+							KnowledgeBuilderErrors knowledgeBuilderErrors = knowledgeBuilder.getErrors();
+							for(Iterator iterator = knowledgeBuilderErrors.iterator(); iterator.hasNext();){
+								System.out.println(iterator.next());
+							}
+						}
+
+						Collection<KiePackage> kiePackages = knowledgeBuilder.getKnowledgePackages();
+						KieBaseConfiguration configuration = KnowledgeBaseFactory.newKnowledgeBaseConfiguration();
+						configuration.setProperty("org.drools.sequential","true");
+						InternalKnowledgeBase kbase = KnowledgeBaseFactory.newKnowledgeBase(configuration);
+						//编译好的规则添加到KnowledgeBase
+						kbase.addPackages(kiePackages);
+				}
+           
+
+
+          （4）StatefulKnowledgeSession
+		            规则编译完成之后，接下来就需要使用一个API使编译好的规则包文件在规则引擎当中运行起来。
+					StatefulKnowledgeSession对象是一种最常用的与规则引擎进行交互的方式，它可以与规则引擎建立一个持续的交互通道，
+					在推理计算的过程中可能会多次触发同一数据集。在用户的代码中，最后使用完StatefulKnowledgeSession对象后，
+					一定要调用dispose()方法以释放相关的内存资源。
+                   StatefulKnowledgeSession 可以接收外部插入的业务数据（fact）,一个fact对象通常是一个普通的java的pojo。它们会有若干个属性，
+				   每个属性都会有getter和setter方法，用来对外提供数据的设置和访问。
+				   在Drools中，fact所承担的作用就是将规则当中要用到的业务数据从应用当中传入过来，如果规则当中需要有数据传出，那么可以
+				   通过在StatefulKnowledgeSession当中设置global对象来实现。设置globel对象不是使用insert方法，而是使用setGlobal方法实现。
+				   
+				    StatefulKnowledgeSession  statefulKSession=kbase.newStatefulKnowledgeSession();   //新版本没有这个对象？？？
+					statefulKSession.setGlobal("globalTest", new Object());//设置一个global对象
+					statefulKSession.insert(new Object());//插入一个fact对象
+					statefulKSession.fireAllRules();
+					statefulKSession.dispose();
+
+
+
+
+           （5）StatelessKnowledgeSession
+		         它的作用和StatefulKnowledgeSession相仿，只是对它做了封装，使用StatelessKnowledgeSession不用再调用dispose()来释放内存资源
+				 它有一些局限性：
+				 ** 不能进行重复插入fact的操作，也不能重复调用fireAllRule()来执行所有的规则，对应这些要完成的工作在StatelessKnowledgeSession当中
+				     只用execute(...)方法，通过这个方法可以实现插入所有的fact，并且可以同时执行所有的规则或规则流，事实也就是在执行execute(...)方法的
+					 时候就在StatelessKnowledgeSession内部执行了insert()方法，fireAllRules()方法和dispose()方法
+					 
+				    public void test4() {
+						KnowledgeBuilder knowledgeBuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
+						knowledgeBuilder.add(ResourceFactory.newClassPathResource("droolRule/param-check-one.drl", Test1.class), ResourceType.DRL);
+						if (knowledgeBuilder.hasErrors()) {
+							System.out.println("规则中存在错误，错误消息如下：");
+							KnowledgeBuilderErrors knowledgeBuilderErrors = knowledgeBuilder.getErrors();
+							for (Iterator iterator = knowledgeBuilderErrors.iterator(); iterator.hasNext(); ) {
+								System.out.println(iterator.next());
+							}
+						}
+
+
+						Collection<KiePackage> kiePackages = knowledgeBuilder.getKnowledgePackages();
+						KieBaseConfiguration configuration = KnowledgeBaseFactory.newKnowledgeBaseConfiguration();
+						configuration.setProperty("org.drools.sequential", "true");
+						InternalKnowledgeBase kbase = KnowledgeBaseFactory.newKnowledgeBase(configuration);
+						//编译好的规则添加到KnowledgeBase
+						kbase.addPackages(kiePackages);
+
+
+						StatelessKieSession statelessKieSession = kbase.newStatelessKieSession();
+						ArrayList list = new ArrayList();
+						list.add(CommandFactory.newInsert(new Object()));
+						list.add(CommandFactory.newInsert(new Object()));
+						list.add(CommandFactory.newSetGlobal("key1", new Object()));
+						list.add(CommandFactory.newSetGlobal("key2", new Object()));
+						statelessKieSession.execute(CommandFactory.newBatchExecution(list));
+					}
+				 
+
+
+
+
+          （6） 以上步骤的执行过程
+		           首先：通过KnowledgeBuilder将相关的规则文件进行编译，产生对应的KnowkedgePackage集合
+				   其次：通过KnowledgeBase把产生的KnowkedgePackage集合收集起来
+				   最后：再产生StatelessKnowledgeSession将规则中需要使用的fact对象插入进去,将规则当中需要的global设置进去，然后调用
+				              fireAllRules()触发所有的规则执行，最后调用dispose()将内存资源释放。
+
+
+
+          
+		 （7）fact对象
+		          fact是指将一个普通的javabean插入到规则的working memory当中后的对象，规则可以对Fact对象进行任意的读写操作，当一个javebean插入到
+				  内存中变成Fact之后，Fact对象不是对原来的javaBean对象进行clone,而是原来javaBean对象的引用。规则再进行计算的时候需要用到应用系统中的数据，
+				  这些数据设置在fact对象中，然后将其插入到规则的内存中，这样在规则中就可以对Fact对象数据的读写，从而实现对应用数据的读写操作，一个fact对象通常
+				  是有getter,setter方法，我们可以简单的把Fact对象理解为规则与应用系统数据交互的桥梁或通道。
+				  
+				  fact对象插入到内存中，会与当前内存中所有的规则进行匹配，同时返回一个FactHandler对象，FactHandler对象是插入到WorkingMemory当中
+				  Fact对象的引用句柄，通过FactHandler对象可以实现对对应的Fact对象的删除及修改
+				  
+				  
+
+
+
+
+
+
+
+二. 规则
+
+     1. 规则文件
+	     一个标准的规则文件以.drl结尾的文本文件。 一个规则文件可以存放多个规则
+		 规则文件的结构：
+		 package  package-name  
+		 imports
+		 globals
+		 functions
+		 queries
+		 rules
+         注意： 规则文件必须有一个package声明，必须放在规则文件的第一行，package是对规则在逻辑上的管理，对于同一package下的用户自定义函数，自定义的
+		     查询等，不管这些函数与查询是否在同一个规则里面，在规则里面是可以直接使用的，这点和java的同一package里的Java类调用时一样的。
+
+
+     2.规则语言
+	    一个规则文件可以存放若干个规则，每个规则通过名称来进行标识
+		
+		rule "name"
+		      attributes     --------------->属性部分
+			  when
+			        LHS         --------------->条件部分
+			 then
+			       RHS         ---------------->结果部分
+		end
+       注： 以上三部分都是可选的
+	   
+	   
+	3.条件部分
+		   条件部分称为Left Hand Side,简称LHS,在一个规则当中when 与 then 中间的部分就是LHS部分，可以包含0-n个条件，如果LHS部分为空的话，那么引擎会自动
+		   添加一个eval(true)的条件，由于该条件总是返回true。LHS部分是由一个或多个条件组成，条件又称之为pattern（匹配模式），多个pattern之间可以使用and
+		   或or来进行连接，同时还可以使用小括号来确定pattern的优先级。
+		  
+		  
+		  *** pattern语法：
+			   [绑定变量名：] Object([field 约束])  
+			   对于一个pattern来说“绑定变量名”是可选的，如果在当前规则的LHS部分的其他的pattern要用到这个对象，那么可以通过为该对象设定一个绑定变量名来
+			   实现对其引用，对于绑定变量的命名，通常的做法是为其添加一个"$"符号作为前缀，这样可以很好的与Fact的属性区别开来。绑定变量不仅可以用在对象上，
+			   也可以用在对象的属性上面，命名方法和对象的命名方法一样。
+			  示例：
+			 rule  "rule1"
+					  when 
+							 $customer: Customer(age>20,gender=='male')
+							 Order(customer==$customer,price>1000)
+					 then
+						   <action> ...
+			 end
+			 解析： 上述代码中包含两个pattern,
+					   第一个pattern：有三个约束，对象类型必须是Customer; age大于20 ；gender是male
+					   第二个pattern:  有三个约束，对象类型必须是Order;同时Order的customer必须是前面的那个Customer; price大于100
+					   这两个pattern没有连接符，默认使用and连接，在该规则的LHS部分中两个pattern只有都满足了，才会返回true
+
+	  
+		 ***  约束连接
+			  && --- and
+			  || -----or 
+			  , ------and
+			  注意：
+				   ** 这三个连接符如果没有小括号显示的定义优先级的话，那么它们的执行顺序为 &&  ||  
+				   ** ","与"&&"和"||"不能混合使用，也就是说"&&"或"||"使用的时候，不可以有",",反之亦然。
+			  示例：
+			  
+			  rule  "rule2"
+					  when 
+						   Customer(age>20 || gender =='male' && city == 'sh')
+					 then
+						  <action>....
+			 end
+			 解析： 上述pattern有四个约束，首先必须是Customer对象，然后要么该对象gender =='male' 且city == 'sh'，要么age>20
+
+
+		
+		  **** 比较操作
+			   在Drools5中共提供了12种类型的比较操作符，分别是： >,>=,<,<=,==,!=,contains,not contains,
+			   memberof,not memberof,matched,not matches;
+			   
+			   (1) contains
+					比较操作符contains是用来检查一个Fact对象的某个字段（该字段要是一个Collection或是一个Array类型的对象）
+					是否包含一个指定的对象。
+					语法：
+						   Object(field[Collection/Array] contains value)
+					示例：
+					package test
+					rule "testRule"
+							 when 
+									 $order:Order();
+									 $customer：Customer(age>20,orders contains $order);
+							then  
+									System.out.println($customer.getName());
+					end
+				   注意： contains只能用于对象的某个Collection/Array类型的字段与另外一个值进行比较，作为比较 
+				   的值可以是一个静态的值，也可以是一个变量（绑定变量或者是一个global对象），上述代码$Order
+				   就是一个绑定变量。
+				   
+	 
+			 （2）memberOf
+					   memberOf是用来判断某个Fact对象的某个字段是否在一个集合中(Collection/Array)中。memberOf
+					   中集合类型的数据是作为被比较项的，集合类型的数据对象位于memberof操作符后面，同时在用
+					   memberof比较操作符时被比较项一定是一个变量（绑定变量或者是一个global对象），而不能是静态值。
+					   语法：
+							Object(fieldName memberOf value[Collection/Array])
+					   示例：
+							 package test
+							 global String[] orderNames;
+							 rule  "rules"
+									   when  
+												 $order:Order(name memberOf orderNames);
+										then 
+												System.out.println($order.getName());
+							 end
+										   
+					   
+					  not memberOf示例：
+					  package test
+					  import java.util.List;
+					  rule "ruleTest"
+							  when 
+									  $orderList:String[]();
+									  $order:Order(name not memberOf $orderList);
+							   then 
+									  System.out.println($order.getName);
+						end
+	   
+
+
+				 (3) matchs
+					   是用来对某个Fact的字段与标准的java正则表达式进行相似匹配，被比较的字符串可以是一个标准的
+					   java正则表达式，有一点需要注意的是： 正则表达式字符串当中不用考虑“\”转义的问题。
+					   语法： 
+							 Object(fieldName matched "正则表达式")
+						示例：
+						package test
+						import java.util.List
+						rule "ruleTest"
+								when 
+										$customer: Customer(name matches "李.*");
+								then
+										System.out.println($customer.getName());
+						end
+						
+						java测试代码：
+						public static void main(String[] args) {
+									KnowledgeBuilder kb=KnowledgeBuilderFactory.newKnowledgeBuilder();
+									kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+									Collection collection=kb.getKnowledgePackages();
+									KnowledgeBase knowledgeBase=KnowledgeBaseFactory.newKnowledgeBase();
+									knowledgeBase.addKnowledgePackages(collection);
+									StatefulKnowledgeSession statefulSession=knowledgeBase.newStatefulKnowledgeSession();
+									Customer cus1=new Customer();
+									cus1.setName("张三");
+									Customer cus2=new Customer();
+									cus2.setName("李四");
+									Customer cus3=new Customer();
+									cus3.setName("王二");
+									Customer cus4=new Customer();
+									cus4.setName("李小龙");
+									statefulSession.insert(cus1);
+									statefulSession.insert(cus2);
+									statefulSession.insert(cus3);
+									statefulSession.insert(cus4);
+									statefulSession.fireAllRules();
+									statefulSession.dispose();
+									System.out.println("end.....");
+						}
+						结果：
+						 李小龙
+						 李四
+						 end...
+				   
+     
+	 
+	 4.结果部分
+	     结果部分又称为Right Hand side，简称为RHS，在一个规则中then后面部分就是RHS，只有在LHS的
+		 所有条件都满足时RHS部分才会执行。
+		 RHS部分是规则真正要做事情的部分，RHS中可以使用LHS部分当中定义的绑定变量名，设置的全局变量，
+		 或者是直接编写JAVA代码（要用到的类，需要在规则文件中用import将类导入）。在RHS当中虽然可以直接
+		 编写java代码，但是不建议在代码当中有条件判断，如果有条件判断，那么请重新考虑将其放在LHS当中。
+		 
+		在 Drools 当中，在 RHS 里面，提供了一些对当前 Working Memory 实现快速操作的宏
+		宏函数或对象，比如 insert/insertLogical、 update 和 retract 就可以实现对当前 Working Memory
+		中的 Fact 对象进行新增、删除或者是修改；如果您觉得还要使用 Drools 当中提供的其它方
+		法，那么您还可以使用另一外宏对象 drools，通过该对象可以使用更多的操作当前 Working
+		Memory 的方法；同时 Drools 还提供了一个名为 kcontext 的宏对象，使我们可以通过该对象
+		直接访问当前 Working Memory 的 KnowledgeRuntime。
+
+        （1）insert
+		           函数insert的作用与我们在java类当中调用StatefulKnowledgeSession对象的insert方法作用相同，
+				   都是将一个Fact对象插入当前的WorkjingMenory
+				   语法：
+				         insert(new Object());
+						   一旦调用insert函数，那么Drools会重新与所有的规则再重新匹配一次，对于没有设置no-loop属性
+						   为true的规则，如果条件满足，不管其之前是否执行过都会再执行一次。这个特性同样试用于update,
+						   retract函数。
+						   
+                   示例：
+				   package test
+				   import java.util.List;
+				   rule "ruleTest1"
+				          salience 2     --------------->指定规则的优先级，数字越大，越先执行
+						  when
+						          eval(true)
+						  then
+						         Customer cus = new Customer();
+								 cus.setName("张三");
+								 insert(cus);
+				  end
+				  rule "ruleTest2"
+				          salience 1      ----------------->指定规则的优先级
+						  when  
+						          $customer：Customer(name =="张三")
+							then
+							       System.out.println("rule2-----"+$customer.getName());
+					end
+                  
+				  java代码测试：
+				  public static void main(String[] args) {
+							KnowledgeBuilder  kb=KnowledgeBuilderFactory.newKnowledgeBuilder();
+							kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+							Collection collection=kb.getKnowledgePackages();
+							KnowledgeBase  knowledgeBase=KnowledgeBaseFactory.newKnowledgeBase();
+							knowledgeBase.addKnowledgePackages(collection);
+							StatefulKnowledgeSession  statefulSession=knowledgeBase.newStatefulKnowledgeSession();
+							statefulSession.fireAllRules();
+							statefulSession.dispose();
+							System.out.println("end.....");
+				}
+                结果：
+				rule2------张三
+				end.....
+
+         （2） insertLogical
+                作用于insert类似，它的作用也是将一个Fact对象插入到当前的Working Memory当中。
+				
+		 （3）update
+		          用来对当前Working Memory当中的Fact进行更新，update函数的作用与StatefulSession对象
+				  的update方法作用基本相同，都是用来告诉当前的Working Memory该Fact对象已经发生了变化。
+				  它的用法有两种形式，一种是直接更新一个Fact对象，另一种通过FactHandle来更新与指定FactHandle
+				  对应的Fact对象。
+				  语法：
+				       update(new Object());
+					   
+				  规则示例：
+				  package test
+				  import java.util.List
+				  query  "query fact count"
+				          Customer();
+				  end
+				  
+				  rule "rule1"
+					  salience 2
+					  when 
+							  eval(true)
+					  then
+							Customer cus = new Customer();
+							cus.setName("张三")；
+							cus.setAge(1);
+							insert(cus);
+				 end
+				 rule "rule2"
+				        salience 1
+						when
+						       $customer:Customer(name =="张三"，age<10);
+						then
+						      $customer.setAge($customer.getAge()+1);
+							  update($customer);
+							  System.out.println("--------------------"+$customer.getName);
+				 end
+				为了测试再多次调用update更新Customer对象后Working Memory当中还只存在一个Customer对象，
+				所以我们还添加了一个名为“query fact count”的query 查询。该查询的作用是用来检索当前Working Memory
+				当中有多少个Customer对象。
+				
+				java 测试代码：
+				public static void main(String[] args) {
+						KnowledgeBuilder kb=KnowledgeBuilderFactory.newKnowledgeBuilder();
+						kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+						Collection collection=kb.getKnowledgePackages();
+						KnowledgeBase knowledgeBase=KnowledgeBaseFactory.newKnowledgeBase();
+						knowledgeBase.addKnowledgePackages(collection);
+						StatefulKnowledgeSession statefulSession=knowledgeBase.newStatefulKnowledgeSession();
+						statefulSession.fireAllRules();
+						statefulSession.dispose();
+						QueryResults qr=statefulSession.getQueryResults("query fact count");
+						System.out.println("customer 对象数目： "+qr.size());
+						System.out.println("end.....");
+				}
+						  
+				注意： 一旦使用update函数，那么符合条件的规则又会重新触发，不管该规则是否执行过，如果希望
+				      规则只执行一次，那么可以通过设置规则的no-loop属性为true来实现。
+					  
+				rule "rule2"
+					salience 1
+					no-loop true   ----->不允许重复执行
+					when
+						   $customer:Customer(name=="张三",age<10);
+					then
+						  $customer.setAge($customer.getAge()+1);
+						  update($customer);
+						 System.out.println("----------"+$customer.getName());
+				end
+            
+			（4） retract
+			         作用是将某个Fact对象从Working Memory当中删除。
+					 规则示例：
+					 package test
+					 import java.util.List
+					 query "query fact count"
+                             Customer();					 
+					 end
+					 rule "rule1"
+					      salience 2
+                          when   
+						           eval(true)
+						  then
+						          Customer cus = new Customer();
+								  cus.setName("张三")；
+								  cus.setAge(1);
+								  insert(cus);
+					end
+
+                    rule  "rule2"
+					       salience 1
+						   when 
+						           $customer：Customer(name=="张三")；
+						   then 
+						           retract($customer);
+					end
+					
+					java测试程序：
+					public static void main(String[] args) {
+						KnowledgeBuilder kb=KnowledgeBuilderFactory.newKnowledgeBuilder();
+						kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+						Collection collection=kb.getKnowledgePackages();
+						KnowledgeBase knowledgeBase=KnowledgeBaseFactory.newKnowledgeBase();
+						knowledgeBase.addKnowledgePackages(collection);
+						StatefulKnowledgeSession statefulSession=knowledgeBase.newStatefulKnowledgeSession();
+						statefulSession.fireAllRules();
+						statefulSession.dispose();
+						QueryResults qr=statefulSession.getQueryResults("query fact count");
+						System.out.println("customer 对象数目： "+qr.size());
+						System.out.println("end.....");
+					}
+					
+					结果：
+					customer对象数目：0
+					end.....
+
+
+            (5) drools
+			      如果希望再规则文件里更多的实现对当前的woring memory控制，可以使用drools对象实现，通过drools
+				  对象可以实现在规则文件里直接访问Working Memory.
+				  示例：
+				  rule "rule1"
+				        salience 1;
+						when 
+						       eval(true);
+						then
+						        Customer cus = new Customer();
+								cus.setName("张三");
+								drools.insert(cus);
+				 end
+				 
+				 常用方法：
+				 drools.getWorkingMemory();      获取当前的WorkingMemory对象
+				 drools.halt();   在当前规则执行完成后，不再执行其他未执行的规则
+				 drools.getRule();  获取当前的规则对象
+				 drools.insert(new Object()) ; 向当前的working memory当中插入指定的对象
+				 drools.update(new Object);更新当前Working memory中指定的对象
+				 drools.update(FactHandler Object)；更新当前Working memory中指定的对象
+				 drools.retract(new Object)；从当前的working memory中删除指定的对象
+
+
+         (6) modify
+		      modify是一个表达式，可以实现快速对Fact对象多个属性进行修改，修改完成后会自动更新到当前的
+			  Working Memory当中
+			  语法：
+			  modify(fact-expression){
+			        <修改Fact属性的表达式>[,<修改Fact属性的表达式>*]
+			  }
+
+              package test 
+			  import java.util.List
+			  rule "rule1"
+			        salience 2 
+					when 
+					        $customer:Customer(name=="张三"，age == 20);
+					then 
+					        System.out.println("修改之前："+$customer.getId()+"...."+$customer.getAge());
+							modify($customer){      ----------->批量修改
+							    setId("super man");
+								setAge(30);
+							}
+			  end
+
+               rule  "rule2"
+			         salience 1
+					 when 
+					         $customer:Customer(name =="张三")；
+					then 
+					        System.out.println("修改之后："+$customer.getId()+"...."+$customer.getAge());
+			  end
+			  
+			  java测试代码：
+			  public static void main(String[] args) {
+					KnowledgeBuilder kb=KnowledgeBuilderFactory.newKnowledgeBuilder();
+					kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+					Collection collection=kb.getKnowledgePackages();
+					KnowledgeBase knowledgeBase=KnowledgeBaseFactory.newKnowledgeBase();
+					knowledgeBase.addKnowledgePackages(collection);
+					StatefulKnowledgeSession statefulSession=knowledgeBase.newStatefulKnowledgeSession();
+					Customer cus=new Customer();
+					cus.setAge(20);
+					cus.setId("ZhangeShan");
+					cus.setName("张三");
+					statefulSession.fireAllRules();
+					statefulSession.dispose();
+					System.out.println("end.....");
+			}
+            执行结果：
+			修改之前：zhangsan....20
+			修改之后：super man.....30
+			end.....
+
+
+
+
+
+   4.属性部分
+         (1)salience
+		       该属性的作用是用来设置规则执行的优先级，salience的值是一个数字，数字越大执行优先级越高，同时它的值可以
+			   是一个负数，默认情况下，规则的salience默认值为0，所以我们如果不手动设置规则的salience属性，那么它的执行
+			   顺序是随机的。
+			   
+		 (2) no-loop
+		       在一个规则当中如果条件满足就对Working Memory当中的某个Fact对象进行了修改，比如update了属性，这时
+			   引擎会再次检查所有的规则是否满足条件，如果满足会再次执行,可能会引发死循环。
+			   这时可以使用no-loop属性来解决，它的作用是用来控制已经执行过的规则在条件再次满足的时候是否再次执行，
+			   如果为true,那么表示该规则只会被引擎检查一次。如果满足条件就执行规则的RHS部分，如果引擎内部因为对Fact更新
+			   引擎再次启动检查规则，那么它会忽略所有的no-loop属性设置为true的规则。
+			   示例：
+			   package test
+			   rule "rule1"
+			           salience 1
+					   no-loop true
+					   when 
+					           $customer:Customer(name == "张三")
+						then   
+						       update($customer);
+							   System.out.println("customer name:"+$customer.getName());
+				end
+		 
+		 (3) date-effective
+		             该属性是用来控制规则只有达到时间后才触发，在规则运行时，引擎会自动拿当前操作系统的时间与date-effective设置的时间进行比较，
+			  只有当前系统时间>=date-effective设置时间时，规则才会触发执行，否则规则将不执行，如果没有该属性的情况下，规则随时可以触发，
+			  没有这种限制。
+			         date-effective的值为一个日期类型字符串，默认情况下，date-effective可接受的日期格式为“dd-MMM-yyyy”,如果操作系统时英文的，
+			  2019年9月25日可以写成25-Sep-2019,如果时中文的操作系统可以写成25-九月-2019.
+			  示例：
+			  package test
+			  rule "rule1"
+			       date-effective "25-九月-2019"
+				   when 
+				          eval(true)
+				   then
+					       System.out.println("rule1 is exection!")
+				end
+				
+				在实际使用过程中，如果不想使用使用这种格式，那么可以在调用的java代码中通过使用System.setProperty(String key,String value)方法来修改默认的时间
+				格式：
+				package test
+				rule "rule1"
+				       date-effective "2019-02-03"
+					   when 
+					            eval(true)
+						then
+						       System.out.println("rule1 is exection!");
+				end
+				
+				测试代码：
+				public void test5(){
+						KnowledgeBuilder knowledgeBuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
+						//设置系统变量，日期格式
+						System.setProperty("drools.dateformate","yyyy-MM-dd");             -------------------------------> 这里设置日期格式
+						knowledgeBuilder.add(ResourceFactory.newClassPathResource("droolRule/param-check-one.drl", Test1.class), ResourceType.DRL);
+						if (knowledgeBuilder.hasErrors()) {
+							System.out.println("规则中存在错误，错误消息如下：");
+							KnowledgeBuilderErrors knowledgeBuilderErrors = knowledgeBuilder.getErrors();
+							for (Iterator iterator = knowledgeBuilderErrors.iterator(); iterator.hasNext(); ) {
+								System.out.println(iterator.next());
+							}
+						}
+						
+						Collection<KiePackage> kiePackages = knowledgeBuilder.getKnowledgePackages();
+						KieBaseConfiguration configuration = KnowledgeBaseFactory.newKnowledgeBaseConfiguration();
+						configuration.setProperty("org.drools.sequential", "true");
+						InternalKnowledgeBase kbase = KnowledgeBaseFactory.newKnowledgeBase(configuration);
+						//编译好的规则添加到KnowledgeBase
+						kbase.addPackages(kiePackages);
+			 }
+			 
+			 注意： 在修改当前系统默认的时间格式时，有两点需要注意：
+			   （1）  设置的key必须是"drools.dateformate",值需要遵循标准的Java日期格式
+			     (2)  修改当前系统默认的时间格式的代码，必须放在KnowledgeBuilder里添加规则文件之前，否则将不起作用
+						  
+			  
+		 (4)   date-expires
+		       该属性的作用与date-effective属性恰恰相反，date-expires的作用是用来设置规则的有效期，引擎在执行规则的时候，
+			   会检查date-expires属性，如果有的话，那么会将这个属性的值与当前系统时间进行对比，如果大于系统时间，
+			   规则就不执行，否则就执行，该属性的值同样是一个日期类型，默认格式“dd-MMM-yyyy”,用法和date-effective属性相同
+			   package test
+			   rule "rules"
+			          date-expires  "2019-09-27"
+					  when 
+					          eval(true)
+					  then
+					        System.out.println("rule1 is execution!")
+			 end
+			 
+			 规则中的值是“yyyy-MM-dd”，所以执行该规则的时候需要设置drools.dateformate环境变量的值。
+		 
+		 (5) enabled
+		       enabled属性比较简单，它是用来定义一个规则是否可用，该属性的值是一个布尔值，默认是true,
+			   设置未false时，该规则不可用。
+		 
+		(6)  dialect
+		      该属性用来定义规则中要使用的语言类型，Drools5版本中支持两种类型的语言，mvel和Java，
+			  默认情况下使用的时java语言。
+			  示例：
+			  package test
+			  rule "rule1"
+			        when 
+					      eval(true)
+					then
+					     System.out.println("dialect:"+drools.getRule().getDialect());     ----------------> drools是内置的宏对象
+			 end
+			 
+			 结果： dialect: java
+		
+		(7) duration
+		     对于一个规则来说，如果设置了该属性，那么规则将在该属性执行值之后在另外一个线程里触发，该属性对应的值是一个长
+			 整型，单位是毫秒。
+			 规则示例：
+			 package test
+			 rule "rule1"
+			       duration  3000     --------> 3000毫秒后在另一个线程执行
+				   when
+				          eval(true)
+				  then
+				         System.out.println("rule thread id :"Thread.currentThread().getId());
+				end
+			 
+			 测试代码：
+			 public static void main(String[] args) {
+					KnowledgeBuilder kb=KnowledgeBuilderFactory.newKnowledgeBuilder();
+					kb.add(new ClassPathResource("test/test.drl"), ResourceType.DRL);
+					Collection collection=kb.getKnowledgePackages();
+					KnowledgeBase  knowledgeBase=KnowledgeBaseFactory.newKnowledgeBase();
+					knowledgeBase.addKnowledgePackages(collection);
+					StatefulKnowledgeSession  statefulSession=knowledgeBase.newStatefulKnowledgeSession();
+					statefulSession.fireAllRules();
+					statefulSession.dispose();
+					System.out.println("current thread id:"+Thread.currentThread().getId());
+            }
+			 
+			 运行结果： 
+			 current thread id :1
+			 rule thread id :8
+			 
+		
+		(8)  activation-group
+		       该属性的作用是将若干个规则分成一个组，用一个字符串来给这个组命名，这样在执行的时候，具有相同activation-group属性的规则中
+			   只要有一个会被执行，其它的规则都将不再执行，也就是说，在一组具有相同activation-group属性的规则当中，只有一个规则会被执行，
+			   其他的规则都将不会被执行。当然对于具有相同activation-group属性的规则当中究竟哪一个会先执行，则可以用类似salience属性来实现。
+			   规则示例：
+			   package test
+			   rule "rule1"
+			          activation-group “test”
+			          when 
+					          eval(true)
+					 then
+					         System.out.println("rule1 execute");
+			  end
+			  
+			  rule "rule2"
+			        activation-group “test”
+					 when 
+					          eval(true)
+					 then
+					         System.out.println("rule2 execute");
+			  end 
+					     
+			  rule1和rule2这两个规则具有相同的activation-group属性，这个属性的值为test, 当条件都满足的时候，只有一个规则会执行，
+			  可设置优先级，来规则那个规则先执行。
+		
+		(9)  agenda-group
+		    
+			  规则的调用与执行是通过StatelessSession或StateSession来实现的，一般的顺序是创建一个StatelessSession或StateSession,
+			  将各种经过编译的规则的package添加到session当中，接下来将规则中可能用到的global对象和Fact对象插入到Session当中，
+			  最后调用fireAllRules方法来触发，执行规则。在没有调用最后一步 fireAllRules 方法之前，所有的规则及插入的 Fact 对象都存放
+			  在一个名叫 Agenda 表的对象当中，这个 Agenda 表中每一个规则及与其匹配相关业务数据叫做 Activation，在调用 fireAllRules 
+			  方法后，这些 Activation 会依次执行，这些位于 Agenda 表中的 Activation 的执行顺序在没有设置相关用来控制顺序的
+			  属性时（比如 salience 属性），它的执行顺序是随机的，不确定的。
+			  Agenda Group 是用来在 Agenda 的基础之上，对现在的规则进行再次分组，具体的分组方法可以采用为规则添加 agenda-group
+			  属性来实现，agenda-group 属性的值也是一个字符串，通过这个字符串，可以将规则分为若干个Agenda Group，默认情况下，
+			  引擎在调用这些设置了 agenda-group 属性的规则的时候需要显示的指定某个 Agenda Group 得到 Focus（焦点）， 这样位于
+			  该 Agenda Group 当中的规则才会触发执行，否则将不执行。
+			  
+			  规则示例：
+			  package test
+			  rule "rule1"
+			          agenda-group  "001"
+					  when  
+					          eval(true)
+					  then
+					          System.out.println("rule1 execute");
+			  end
+			  
+			  rule "rule2"
+			         agenda-group "002"
+					 when 
+					       eval(true)
+					 then 
+					         System.out.println("rule2 execute");
+				end
+               
+                测试代码：			   
+				public static void main(String[] args) {
+						KnowledgeBuilder kb = KnowledgeBuilderFactory.newKnowledgeBuilder();
+						kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+						Collection collection = kb.getKnowledgePackages();
+						KnowledgeBase knowledgeBase =KnowledgeBaseFactory.newKnowledgeBase();
+						knowledgeBase.addKnowledgePackages(collection);
+						StatefulKnowledgeSession statefulSession = knowledgeBase.newStatefulKnowledgeSession();
+						//设置agenda-group的焦点
+						statefulSession.getAgenda().getAgendaGroup("002").setFocus();
+						statefulSession.fireAllRules();
+						statefulSession.dispose();
+                }
+                注：这句代码的作用先得到Agenda，再通过Agenda得到名为002的Agenda Group对象，最后把Focus
+				设置到名为002的Agenda Group当中，这个位于名为002的Agenda Group中的rule2规则会执行，而
+                位于001的Agenda Group当中的rule则不会执行，因为名为001的Agenda Group没有的得到Focus
+
+               执行结果：
+               rule2 execute 		
+
+               实际的应用中，agenda-group可以和auto-focus属性一起使用，这样就不用在代码中显示的为某个
+			   agenda-group设置Focus了。
+			   
+		(10)  auto-focus
+		        auto-focus 属性，它的作用是用来在已设置了 agenda-group 的规则上设置该规则是否可以自动独取 Focus，
+		如果该属性设置为 true，那么在引擎执行时，就不需要显示的为某个 Agenda Group 设置 Focus，否则需要。
+		对于规则的执行的控制，还可以使用 Agenda Filter 来实现。在 Drools 当中，提供了一个名为 
+		org.drools.runtime.rule.AgendaFilter 的 Agenda Filter 接口，用户可以实现该接口，通过规则当中的某些
+		属性来控制规则要不要执行。 org.drools.runtime.rule.AgendaFilter 接口只有一个方法需要实现,方法体如下：
+		public boolean accept(Activation activation);
+		        在该方法当中提供了一个 Activation 参数，通过该参数我们可以得到当前正在执行的规则对象或其它一些
+		属性，该方法要返回一个布尔值，该布尔值就决定了要不要执行当前这个规则，返回 true 就执行规则，
+		否则就不执行。
+		       
+		规则示例：
+		package test
+		rule "rule1"
+		         agenda-group  "001"
+				 auto-focus  true
+                 when
+                          eval(true)
+                 then
+                          System.out.println("rule1 execute");
+         end		
+        
+	     rule "rule2"
+		         agenda-group  "002"
+				 auto-focus  true
+                 when
+                          eval(true)
+                 then
+                          System.out.println("rule2 execute");
+          end		
+          
+		  在引擎执行规则的时候，我们希望使用规则名来对要执行的规则做一个过滤，此时就可以通过AgendaFilter
+		  来实现。
+		 
+		 过滤示例： 
+		  import org.drools.runtime.rule.Activation;
+          import org.drools.runtime.rule.AgendaFilter;
+		  public class TestAgendaFilter implements AgendaFilter {
+			private String startName;
+			public TestAgendaFilter(String startName){
+			   this.startName=startName;
+			}
+			public boolean accept(Activation activation) {
+				String ruleName=activation.getRule().getName();
+				if(ruleName.startsWith(this.startName)){
+			     	return true;
+				}else{
+				    return false;
+				}
+			}
+		 }
+		
+ 		从实现类中可以看到，我们采用的过滤方法是规则名的前缀，通过 Activation 得到当前的 Rule 对象， 然后
+		 得到当前规则的 name，再用这个 name 与给定的 name 前缀进行比较，如果相同就返回 true，否则就返回 false。
+		 
+		 测试类：
+		 public class Test {
+			public static void main(String[] args) {
+				KnowledgeBuilder kb = KnowledgeBuilderFactory.newKnowledgeBuilder();
+				kb.add(new ClassPathResource("test/test.drl"),
+				ResourceType.DRL);
+				KnowledgeBase knowledgeBase =KnowledgeBaseFactory.newKnowledgeBase();
+				knowledgeBase.addKnowledgePackages(kb.getKnowledgePackages());
+				StatefulKnowledgeSession statefulSession = knowledgeBase.newStatefulKnowledgeSession();
+				AgendaFilter filter=new TestAgendaFilter("rule1");    
+				statefulSession.fireAllRules(filter);   ----->使用过滤器
+				statefulSession.dispose();
+			}
+		}
+		 
+		 执行结果：
+		 rule1 execute
+		 
+		
+		(11) ruleflow-group 
+		      
+		
+		(12) lock-on-active
+		      当在规则上使用 ruleflow-group 属性或 agenda-group 属性的时候，将 lock-on-action 属性
+		的值设置为 true，可能避免因某些 Fact 对象被修改而使已经执行过的规则再次被激活执行。
+		可以看出该属性与 no-loop 属性有相似之处， no-loop 属性是为了避免 Fact 修改或调用
+		了 insert、 retract、 update 之类而导致规则再次激活执行，这里的 lock-on-action 属性也是起
+		这个作用， lock-on-active 是 no-loop 的增强版属性，它主要作用在使用 ruleflow-group 属性
+		或 agenda-group 属性的时候。 lock-on-active 属性默认值为 false。
+
+
+    
+	 5.函数
+	     函数是定义在规则文件中一代码块，作用是将在规则文件中若干个规则都会用到的业务封装器来，实现
+		 业务代码的复用，减少规则编写的工作量。
+		 函数的编写位置是规则文件当中package声明后的任何地方。
+		 语法格式：
+		 function void/Object functionName(Type args...){
+		     //函数体的业务代码
+		 }
+       
+         规则示例：
+		 package test
+		 import java.util.List;
+		 import java.util.ArrayList;
+		 
+		 function void setOrder(Customer customer,int OrderSize){
+		      List list = new ArrayList();
+			  for(int i=0; i<orderSize;i++){
+			     Order order = new Order();
+				 list.add(order);
+			  }
+			  customer.setOrder(list);
+		 }
+		 
+		 rule "rule1"
+		          when 
+				           $customer:Customer();
+				  then 
+				         setOrder($customer,5);
+						 System.out.println("rule1 order size:"+$customer.getOrders().size());
+		end
+		
+		rule "rule2"
+		       when 
+			             $customer:Customer();
+				then 
+				         setOrder($customer,10);
+						 System.out.println("rule1 order size:"+$customer.getOrders().size());
+		 end
+			           
+        测试方法：
+		public static void main(String[] args) {
+			KnowledgeBuilder kb = KnowledgeBuilderFactory.newKnowledgeBuilder();
+			kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+			KnowledgeBase knowledgeBase = KnowledgeBaseFactory.newKnowledgeBase();
+			knowledgeBase.addKnowledgePackages(kb.getKnowledgePackages());
+			StatefulKnowledgeSession statefulSession = knowledgeBase.newStatefulKnowledgeSession();
+			statefulSession.insert(new Customer());
+			statefulSession.fireAllRules();
+			statefulSession.dispose();
+		}
+
+        运行结果：
+		rule2 order size:5
+		rule1 order size:10
+        
+		注意： 在实际应用中，我们可以考虑在java类中定义静态方法的办法来替代规则文件当中的函数，java类当中
+		的静态方法，不需要将该类实例化就可以使用该方法。
+		
+		Java类：
+		package test;
+		public class RuleTools{
+		     public static void printInfo(String name){
+			      System.out.println("you name is:"+name);
+			 }
+		}
+		
+		规则使用类中的静态方法：
+		package test 
+		import function test.RuleTools.printInfo
+		rule "rule1"
+		      when 
+			          eval(true)
+			  then
+			         printInfo("zhangsan");
+		end
+		通过使用import function关键字，将类中的静态方法printInfo引入到当前文件中。
+		
+
+
+    6.查询
+        查询时Drools当中提供的一种根据条件在当前的woriking memory当中查找Fact的方法。
+		
+		6.1 无参查询
+		      Drools查询以query关键字开始，以end关键字结束，在package当中一个查询要有唯一的名称，
+			  
+			  语法：
+			  query "query name"
+                     #conditions			  
+			  end
+              示例：
+              query "testQuery"
+                    customer:Customer(age>30,order.size>10)
+              end			  
+			  查询名称为testQuery,条件是age>30且Order的数量大于10的Customer对象的集合
+			  
+			  测试代码：
+			  public class Test {
+					public static void main(String[] args) {
+						KnowledgeBuilder kb = KnowledgeBuilderFactory.newKnowledgeBuilder();
+						kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+						KnowledgeBase knowledgeBase = KnowledgeBaseFactory.newKnowledgeBase();
+						knowledgeBase.addKnowledgePackages(kb.getKnowledgePackages());
+						StatefulKnowledgeSession statefulSession = knowledgeBase.newStatefulKnowledgeSession();
+						//向当前WorkingMemory当中插入Customer对象
+						statefulSession.insert(generateCustomer("张三",20,21));
+						statefulSession.insert(generateCustomer("李四",33,11));
+						statefulSession.insert(generateCustomer("王二",43,12));
+						//调用查询
+						QueryResults queryResults=statefulSession.getQueryResults("testQuery");
+						for(QueryResultsRow qr:queryResults){
+							Customer cus=(Customer)qr.get("customer");
+							//打印查询结果
+							System.out.println("customer name :"+cus.getName());
+						}
+						statefulSession.dispose();
+					}
+					/**
+					* 产生包括指定数量Order的Customer
+					* */
+					public static Customer generateCustomer(String name,int age,int orderSize){
+							Customer cus=new Customer();
+							cus.setName(name);
+							cus.setAge(age);
+							List ls=new ArrayList();
+							for (int i = 0; i < orderSize; i++) {
+							   ls.add(new Order());
+							}
+							cus.setOrders(ls);
+							return cus;
+					}
+				}
+			    执行结果：
+				customer name:王二
+				customer name:李四
+		
+		 6.2参数查询
+		      语法：
+		      query "query name" (Object obj，....)
+                     #conditions			  
+			  end
+              
+			  示例：
+			    query "testQuery" (int $age,String $gender)   ---->使用$符号，为了和条件表达式中的变量做区分
+                      customer:Customer(age >$age,gender == $gender)				
+				end
+
+             测试代码：
+			  public class Test {
+					public static void main(String[] args) {
+						KnowledgeBuilder kb = KnowledgeBuilderFactory.newKnowledgeBuilder();
+						kb.add(new ClassPathResource("test/test.drl"),ResourceType.DRL);
+						KnowledgeBase knowledgeBase = KnowledgeBaseFactory.newKnowledgeBase();
+						knowledgeBase.addKnowledgePackages(kb.getKnowledgePackages());
+						StatefulKnowledgeSession statefulSession = knowledgeBase.newStatefulKnowledgeSession();
+						//向当前WorkingMemory当中插入Customer对象
+						statefulSession.insert(generateCustomer("张三",20,"F"));
+						statefulSession.insert(generateCustomer("李四",33,"M"));
+						statefulSession.insert(generateCustomer("王二",43,"F"));
+						//调用查询,可以传入值
+						QueryResults queryResults=statefulSession.getQueryResults("testQuery",new Object[]{new Integer(20),"F"});
+						for(QueryResultsRow qr:queryResults){
+							Customer cus=(Customer)qr.get("customer");
+							//打印查询结果
+							System.out.println("customer name :"+cus.getName());
+						}
+						statefulSession.dispose();
+					}
+					/**
+					* 产生包括指定数量Order的Customer
+					* */
+					public static Customer generateCustomer(String name,int age,String gender){
+							Customer cus=new Customer();
+						    cus.setAge(age);
+							cus.setName(name);
+							cus.setGender(gender);
+							return cus;
+					}
+				}
+
+              执行结果：
+			  customer name:王二
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
