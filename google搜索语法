@@ -1,0 +1,93 @@
+一. google 搜索语法
+
+1.OR AND
+    OR： 返回的结果是包含OR两边的任意关键词，比如：amazon OR ebay
+	AND：返回的结果是包含AND两边的关键词，比如 amazon AND ebay
+    OR,AND 必须大写
+
+
+2.用“-”在搜索结果中排除某个关键词
+    比如 amazon -ebay搜索结果中就不会出现ebay这个词
+
+
+3. 用双引号进行精准匹配搜索
+   比如 "travel to china tips" 就搜索除了跟搜索词完全匹配的文章
+
+
+4. 用* 星号搜索执行关键词
+    比如： "amazon * guide",其中*号代表了任何字符
+    返回的结果不仅包含Amazon Quick Start Guide还包括Amazon PPC Guide
+
+
+5. inurl
+    基本语法： inurl:  关键词1 关键词2 ....
+   inurl: amazon ppc 表示搜索url中含有"amazon" 和"ppc"的网页
+   inurl指令用于搜索词出现在URL中的页面，简单的说就是url中包含"你要搜索的词"的页面
+
+
+6.intitle
+    基本语法： intitle: 关键词1 关键词2
+    在一个或几个关键词前面加上  intitle: ,可以限制只搜索网页标题中含有这些关键词的网页，
+    title是目前页面优化的最重要因素，做SEO的人无论要做那个词的排名，都会把关键词放进title,
+    使用intitle:指令找到的文件才是更准确的竞争页面，如果关键词只出现在页面可见文字中，而
+	没有出现在title中，大部分情况是并没有针对关键词进行优化，也不是有力的竞争对手。
+	比如： intitle:amazon ebay
+	表示搜索中含有关键词"amazon" 和"ebay"的网页
+	
+
+
+7.intext
+   intext: 指返回的正文中包含关键词的页面
+   比如：
+   intext:amazon ebay wish
+    就会返会页面正文中含有 "amazon" 和"ebay"和"wish"的词的页面
+   
+
+
+8.allintitle
+   allintitle: 返回的是页面的标题中包含多组关键词的文件
+   例如： allintitle: amazon ebay wish
+   相当于：
+   intitle: amazon intitle:ebay  intitle:wish
+   返回的文件包含amazon 或 ebay 或 wish
+   
+  
+ 9.allintext
+    allintext:搜索返回的页面正文中包含多组管加词的页面
+	例如： 
+	allintext: amazon ebay wish
+	相当于 intext: amazon  intext:ebay intext:wish
+    返回的正文中包含amazon 或ebay 或wish
+	
+
+10.fileType
+    基本语法：   关键词  fileType: 文件类型标识
+	fileType：指令用来搜索特定的资源，比如PDF电子书，word文件等非常有用
+	比如 SEO fileType:pdf 返回的就是包含SEO这个关键词的所有PDF文件
+	
+	
+	
+11. site
+     site：在一个网站前加上"site"，可以限制只搜索某个具体网站，网站频道，或某域名内的
+	 所有网页，就是在指定网站内搜索
+	 
+	 基本语法： 关键字  site:网站名或国别
+	 比如：site:bbs.ichuanglan.com 表示搜索 子域名bbs.ichuanglan.com的所有文件
+	 
+	 注意点：
+	 site后的冒号":"可以是全角，也可以是半角
+	 "site:"后不能有"http://"前缀或"/"后缀
+	 网站频道只局限于"频道名.域名"方式，不能是"域名/频道名"方式
+
+
+
+12.  其他常用：
+        网页搜索：allinanchor:, allintext:, allintitle:, allinurl:, cache:, define:, fileType:, id:, inanchor:, info:,
+                           intext:, intitle:, inurl:, link:, related:, site:
+        图片搜索：allintitle:, allinurl:, fileType:, inurl:, intitle:, site:,
+        分组搜索：allintext:, allintitle:, author: , group:, insubject:, intext:, intitle:
+        目录搜索：allintext:, allintitle:, allinurl:, ext:, fileType: , intext:, intitle:, inurl:,
+        新闻搜索： allintext:, allintitle:, allinurl:, intext:, intitle:, inurl:,location:, source:		
+
+
+
