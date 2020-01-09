@@ -1,0 +1,38 @@
+
+
+spring boot 配置加载顺序
+一般spring boot应用需要的配置内容放在项目工程中，然后通过spring.profiles.active或是maven来实现多环境的支持。
+
+1.在命令行中传入的参数
+
+2.SPRING_APPLICATION_JSON中的属性，SPRING_APPLICATION_JSON是以Json格式配置在系统环境变量中的内容
+
+3.java: comp/env中的JNDI属性
+
+4. java的系统属性，可以通过System.getProperties()获得的内容
+
+5.操作系统的环境变量
+
+6.通过random.*配置的随机属性
+
+7.位于当前应用jar包之外，针对不同{profile}环境的配置文件内容，例如：application-{profile}.properties或yaml配置文件
+
+8.位于当前应用jar包之内，针对不同{profile}环境的配置文件内容，例如：application-{profile}.properties或yaml配置文件
+
+9.位于当前应用jar包之外的 application.properties或yaml配置文件
+
+10.位于当前应用jar包内的application.properties或yaml配置文件
+
+11.在@Configration注解修改的类中，通过@PropertySource注解定义的属性
+
+12.应用默认属性，使用SpringAppliation.setDefaultProperties定义的内容
+
+第7项和第九项都是从应用jar包之外读取配置文件，所以，实现外部化配置的原理就从此切入，为其指定外部配置文件的
+加载位置来取代jar包之内的配置内容。
+
+
+指定外部配置文件： java -jar demo.jar --Dspring.config.location=配置文件地址
+
+
+
+
