@@ -1,0 +1,142 @@
+@import 注解的作用
+就像XML里的<import>标签一样，可以导入配置类或者一些需要前置加载的类
+
+1. 导入带有@Configuration的配置类，4.2版本之后也可以导入普通类
+     
+	 1.1 示例：导入普通类
+			 public class TestA {
+				public void fun(String str){
+					System.out.println(str);
+				}
+				public void printName(){
+					System.out.println("类名："+Thread.currentThread().getStackTrace()[1].getClassName());
+				}
+			}
+
+			@Configuration
+			@Import({TestA.class})
+			public class ImportConfig {
+			}
+			
+			测试：
+			 @Autowired
+			private TestA testA;
+
+			@RequestMapping(value = "/test",method = RequestMethod.GET)
+			public void testFun1(){
+				testA.printName();
+			}
+			
+			结果：类名：com.young.test.logtest.vo.TestA
+	
+	 1.2 导入带有@Configuration的配置类
+			   @Configuration
+				public class TestB {
+					public void fun(String str){
+						System.out.println(str);
+					}
+					public void printName(){
+						System.out.println("类名："+Thread.currentThread().getStackTrace()[1].getClassName());
+					}
+				}
+	           
+			    @Configuration
+				@Import({TestB.class})
+				public class ImportConfig {
+				}
+				
+				测试：
+				 @Autowired
+				private TestB testB;
+
+				@RequestMapping(value = "/test",method = RequestMethod.GET)
+				public void testFun1(){
+					testB.printName();
+				}
+				
+				结果：com.young.test.logtest.vo.TestB
+				疑问：TestB 已经有@Configuration注解了，为什么还要@Import导入？？
+				   答： 如果TestB 不在扫描包的范围内，则不能实例化bean到IOC容器，使用@Import可以将找个
+				          bean实例化到IOC容器中。
+	
+	
+	
+2. 通过ImportSelector方式导入类
+     
+	 普通类：
+	 public class TestC {
+		public void fun(String str){
+			System.out.println(str);
+		}
+		public void printName(){
+			System.out.println("类名："+Thread.currentThread().getStackTrace()[1].getClassName());
+		}
+	 }
+	 
+	 自定义ImportSelector：
+	 public class TestImportSelector implements ImportSelector {
+		@Override
+		public String[] selectImports(AnnotationMetadata annotationMetadata) {
+			return new String[]{"com.young.test.logtest.vo.TestC"};
+		}
+	 }
+
+     导入：
+	 @Import({TestImportSelector.class})
+	 @Configuration
+	 public class ImportConfig {
+	 }
+	 
+	 测试：
+	   @Autowired
+		private TestC testC;
+		@RequestMapping(value = "/test",method = RequestMethod.GET)
+		public void testFun1(){
+			testC.printName();
+		}
+
+      结果：
+	     类名：com.young.test.logtest.vo.TestC
+
+
+
+
+3.通过ImportBeanDefinitionRegistrar导入类
+     
+	 普通类：
+	 public class TestD {
+		public void fun(String str){
+			System.out.println(str);
+		}
+		public void printName(){
+			System.out.println("类名："+Thread.currentThread().getStackTrace()[1].getClassName());
+		}
+	}
+
+    自定义ImportBeanDefinitionRegistrar：
+    public class TestImportBeanDefinitionRegistrar implements ImportBeanDefinitionRegistrar {
+		@Override
+		public void registerBeanDefinitions(AnnotationMetadata annotationMetadata, BeanDefinitionRegistry beanDefinitionRegistry) {
+			RootBeanDefinition root = new RootBeanDefinition(TestD.class);
+			beanDefinitionRegistry.registerBeanDefinition("testD",root);
+		}
+	}
+
+    导入：
+	@Import({TestImportBeanDefinitionRegistrar.class})
+	@Configuration
+	public class ImportConfig {
+	}
+    
+	测试：
+	@Autowired
+    private TestD testD;
+    @RequestMapping(value = "/test",method = RequestMethod.GET)
+    public void testFun1(){
+        testD.printName();
+    }
+	
+	结果：
+	   类名：com.young.test.logtest.vo.TestD
+
+
