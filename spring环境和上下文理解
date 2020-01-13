@@ -1,0 +1,79 @@
+
+一. spring environment理解：
+
+	1.环境
+	  用来表示整个应用运行的环境，为了更形象的理解Environment，你可以把Spring应用的运行时
+	  简单的想象称两部分，spring应用本身，spring应用所处的环境。
+	  环境指两方面：profile和properties
+
+	2.profile  (dev,uat,pro)
+			profile是配置的一个被命名的，bean定影的逻辑组，这些bean只有在给定的profile配置激活时，
+		才会注册到容器中。不管是XML还是注解，beans都有可能指派给profile配置，Environment环境
+		对象的作用，对于profile配置来说，它能决定当前激活的是哪个profile配置，和哪个profile是默认的。
+		   ** 一个profile就是一组bean定义的逻辑分组
+		   ** 这个分组，也就是profile,被赋予一个命名，就是profile名字
+		   ** 只有当一个profile处于active状态时，它对应的逻辑上组织在一起的这些bean定义才会被注册到容器中
+		   ** bean添加到profile可以通过XML定义方式或annotation注解方式
+		   ** environment对于profile所扮演的角色是用来指定那些profile是当前活跃的缺省
+
+	3.properties
+		   properties属性可能来源于properties文件，JVM properties，system环境变量，JNDI，servlet context
+		parameters上下文参数，专门的properties对象，maps,enviroment对象的作用，对于properties来说，是
+		提供给用户方便的服务接口，方便撰写配置，方便解析配置   
+		
+	4.自己的理解
+	   environment: 包含两部分profile和properties, profile需要激活的配置文件，properties:激活配置文件中的配置
+	   
+		 
+
+
+二.spring  BeanFactory和ApplicationContext
+      
+	  1.spring容器（IOC容器）
+	       spring容器可以理解为生产对象的地方，容器不止帮我们创建了对象那么简单，它负责对象的整个生命周期，
+		创建，装配，销毁。这里对象的创建管理控制权都交给了spring容器。
+		
+	  2.BeanFactory和ApplicationContext关系
+	    ApplicationContext是BeanFactory的子接口，它们都可以当作spring 容器，spring容器是生成bean实例
+		的工厂，并管理容器中得bean。一般称BeanFactory为IOC容器，ApplicationContext为应用上下文。
+		BeanFactory是简单得容器，只提供了基本得DI功能
+		ApplicationContext能够提供企业级得服务，解析配置文本信息，这也是ApplicationContext实例对象
+		最常见得应用场景。
+		
+	
+	  3.BeanFactory(IOC容器)
+	     是Spring bean容器的根接口，提供获取bean，是否包含bean,是否单例与原型，获取bean类型，bean 别名的方法 。
+		 它最主要的方法就是getBean(String beanName)。
+		 
+	  4.ApplicationContext（应用上下文）
+             常用实现类：
+             **   AnnotationConfigApplicationContext
+                   从一个或多个基于java配置类中加载上下文定义，适用于java注解的方式
+             **   ClassPathXmlApplicationContext
+                    从类路径下的一个或多个配置文件中加载上下文定义，使用于xml配置的方式
+             **   FileSystemXmlApplicaionContext
+                    从文件系统下的一个或多个xml配置文件中加载上下文定义，就是从系统盘符中加载配置
+             **  AnnotationConfigWebApplicationContext
+                   专门为web应用准备的，适用于注解方式配置
+             **  XmlWebApplicationContext
+                   从web应用下的一个或多个xml配置文件加载上下文定义，使用于xml配置的方式			 
+          		   
+				   
+		5. BeanFactory和ApplicationContext区别
+		   BeanFactory在初始化容器时，并未实例化bean,直到第一次访问某个bean时才实例化目标，
+		   而ApplicationContext则在初始化应用上下文的时候就实例化所有单实例的bean。因此
+		   ApplicationContext的初始化时间会比BeanFactory稍微长一些，但是在后面的调用中没有第一次
+		   惩罚问题。
+				   
+				   
+      6.spring具有非常大的灵活性，它提供了三种主要的配置机制
+           ** xml中显示配置
+           ** java中进行显示配置
+           ** 隐式的bean发现机制，和自动装配		   
+		          *** 组件扫描（component scanning）：spring 会自动发现应用上下文中所创建的bean
+				  *** 自动装配（autowaired）: spring 自动满足bean之间的依赖
+
+     
+
+
+
