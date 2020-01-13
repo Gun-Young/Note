@@ -1,0 +1,235 @@
+public ConfigurableApplicationContext run(String... args) {
+		StopWatch stopWatch = new StopWatch();
+		stopWatch.start();
+		ConfigurableApplicationContext context = null;
+		Collection<SpringBootExceptionReporter> exceptionReporters = new ArrayList<>();
+		configureHeadlessProperty();
+		
+		//1.获取监听器
+		SpringApplicationRunListeners listeners = getRunListeners(args);
+		//2.调用所有监听器中的starting()方法
+		listeners.starting();
+		try {
+			ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+			//3.构造容器环境 （各种配置）
+			ConfigurableEnvironment environment = prepareEnvironment(listeners,applicationArguments);
+			//4.处理需要忽略的bean
+			configureIgnoreBeanInfo(environment);
+			//5.打印banner
+			Banner printedBanner = printBanner(environment);
+			//6.初始化容器
+			context = createApplicationContext();
+			//7.实例化SpringBootExceptionReporter，用来支持报告关于启动的错误
+			exceptionReporters = getSpringFactoriesInstances(
+					SpringBootExceptionReporter.class,
+					new Class[] { ConfigurableApplicationContext.class }, context);
+			//8.刷新容器前的准备阶段
+			prepareContext(context, environment, listeners, applicationArguments,
+					printedBanner);
+			//9.刷新容器
+			refreshContext(context);
+			//10.刷新容器后的扩展接口 ，源码中并没有做什么
+			afterRefresh(context, applicationArguments);
+			stopWatch.stop();
+			if (this.logStartupInfo) {
+				new StartupInfoLogger(this.mainApplicationClass)
+						.logStarted(getApplicationLog(), stopWatch);
+			}
+			listeners.started(context);
+			callRunners(context, applicationArguments);
+		}
+		catch (Throwable ex) {
+			handleRunFailure(context, ex, exceptionReporters, listeners);
+			throw new IllegalStateException(ex);
+		}
+
+		try {
+			listeners.running(context);
+		}
+		catch (Throwable ex) {
+			handleRunFailure(context, ex, exceptionReporters, null);
+			throw new IllegalStateException(ex);
+		}
+		return context;
+	}
+
+
+
+
+1.获取监听器
+	   1.1----->
+	   private SpringApplicationRunListeners getRunListeners(String[] args) {
+			Class<?>[] types = new Class<?>[] { SpringApplication.class, String[].class };
+			return new SpringApplicationRunListeners(logger, getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, args));
+		}
+		
+		1.2----->
+		//type可以是ApplicationContextInitializer，ApplicationListener ，SpringApplicationRunListener(所以这是扩展接口)
+		//ApplicationContextInitializer，ApplicationListener 在 SpringApplication实例化的时候 调用setInitializers(...)和setListeners(....)方法
+		//SpringApplicationRunListener 在SpringApplication调用run方法的时候执行
+		private <T> Collection<T> getSpringFactoriesInstances(Class<T> type,Class<?>[] parameterTypes, Object... args) {
+			ClassLoader classLoader = getClassLoader();
+			//获取所有META-INF/spring.factories文件里的类，并选择出符合type的类的名字
+			Set<String> names = new LinkedHashSet<>(SpringFactoriesLoader.loadFactoryNames(type, classLoader));
+			//根据类名进行反射实例化
+			List<T> instances = createSpringFactoriesInstances(type, parameterTypes,classLoader, args, names);
+			//如果有排序进行排序，即类的加载顺序
+			AnnotationAwareOrderComparator.sort(instances);
+			return instances;
+	   }
+
+   
+
+
+3.构造容器环境
+       private ConfigurableEnvironment prepareEnvironment(SpringApplicationRunListeners listeners,ApplicationArguments applicationArguments) {
+			//根据webApplicationType类型获取环境， SERVLET-->StandardServletEnvironment , REACTIVE--->StandardReactiveWebEnvironment 
+			// default ----> StandardEnvironment
+			ConfigurableEnvironment environment = getOrCreateEnvironment();
+			//配置环境，执行完这一步，还没有加载项目的配置文件，applicationcontext.properties
+			//只是加载了 servletconfigInitParams,servletcontextInitParams,systemProperties(jvm变量),systemEnvironment(操作系统环境变量)
+			configureEnvironment(environment, applicationArguments.getSourceArgs());
+			//调用所有监听器的environmentPrepared方法,在这一步加载了自己的配置文件，application.properties
+			// 其中调用EventPublishingRunListener类时时，会调用ConfigFileApplicationListener，这个类会加载配置文件
+			listeners.environmentPrepared(environment);
+			//将环境绑定到SpringApplication
+			bindToSpringApplication(environment);
+			if (!this.isCustomEnvironment) {
+			    //这里的推断环境deduceEnvironmentClass()根据webApplicationType类型来获取
+				//SERVLET ---->StandardServletEnvironment.class,  REACTIVE---> StandardReactiveWebEnvironment.class
+				//default ---->StandardEnvironment.class
+				//如果有必要，会进行环境转换 ----->convertEnvironmentIfNecessary(...)
+				environment = new EnvironmentConverter(getClassLoader()).convertEnvironmentIfNecessary(environment, deduceEnvironmentClass());
+			}
+			ConfigurationPropertySources.attach(environment);
+			return environment;
+	 }
+
+
+
+8.刷新前的准备阶段
+   private void prepareContext(ConfigurableApplicationContext context,ConfigurableEnvironment environment, SpringApplicationRunListeners listeners,ApplicationArguments applicationArguments, Banner printedBanner) {
+		context.setEnvironment(environment);
+		postProcessApplicationContext(context);
+		applyInitializers(context);
+		//上下文准备好后，回调所有监听器的 contextPrepared()方法
+		listeners.contextPrepared(context);
+		if (this.logStartupInfo) {
+			logStartupInfo(context.getParent() == null);
+			logStartupProfileInfo(context);
+		}
+		// Add boot specific singleton beans
+		ConfigurableListableBeanFactory beanFactory = context.getBeanFactory();
+		beanFactory.registerSingleton("springApplicationArguments", applicationArguments);
+		if (printedBanner != null) {
+			beanFactory.registerSingleton("springBootBanner", printedBanner);
+		}
+		if (beanFactory instanceof DefaultListableBeanFactory) {
+			((DefaultListableBeanFactory) beanFactory)
+					.setAllowBeanDefinitionOverriding(this.allowBeanDefinitionOverriding);
+		}
+		// Load the sources
+		Set<Object> sources = getAllSources();
+		Assert.notEmpty(sources, "Sources must not be empty");
+		load(context, sources.toArray(new Object[0]));
+		//上下文载入完成加载，还有没有刷新前，回调所有监听器的contextLoaded()方法
+		listeners.contextLoaded(context);
+	}
+
+
+
+9.refreshContext 刷新容器
+
+    //刷新应用上下文，注册关闭应用钩子
+   private void refreshContext(ConfigurableApplicationContext context) {
+        //刷新应用
+		refresh(context);
+		//默认为true
+		if (this.registerShutdownHook) {
+			try {
+			    //注册shutdown方法
+				context.registerShutdownHook();
+			}
+			catch (AccessControlException ex) {
+				// Not allowed in some environments.
+			}
+		}
+	}
+   
+   public void refresh() throws BeansException, IllegalStateException {
+		synchronized (this.startupShutdownMonitor) {
+			//为应用上下文的刷新做准备--- 设置时间，记录刷新日志，初始化属性源中的占位符和验证必要的属性
+			prepareRefresh();
+
+			//让子类刷新内部的bean factory
+			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+			// Prepare the bean factory for use in this context.
+			//准备在这个应用上下文中使用的bean factory
+			prepareBeanFactory(beanFactory);
+
+			try {
+				// Allows post-processing of the bean factory in context subclasses.
+				//bean factory后置处理
+				postProcessBeanFactory(beanFactory);
+
+				// Invoke factory processors registered as beans in the context.
+				//调用应用上下文中作为bean注册的工厂处理器
+				invokeBeanFactoryPostProcessors(beanFactory);
+
+				// Register bean processors that intercept bean creation.
+				//注册拦截创建bean的bean处理器
+				registerBeanPostProcessors(beanFactory);
+
+				// Initialize message source for this context.
+				//初始化消息源
+				initMessageSource();
+
+				// Initialize event multicaster for this context.
+				//初始化事件广播
+				initApplicationEventMulticaster();
+
+				// Initialize other special beans in specific context subclasses.
+				//初始化特定上下文子类中的其他bean
+				onRefresh();
+
+				// Check for listener beans and register them.
+				//注册监听器bean
+				registerListeners();
+
+				// Instantiate all remaining (non-lazy-init) singletons.
+				//实例化所有的单例bean
+				finishBeanFactoryInitialization(beanFactory);
+
+				// Last step: publish corresponding event.
+				//发布响应的事件
+				finishRefresh();
+			}
+
+			catch (BeansException ex) {
+				if (logger.isWarnEnabled()) {
+					logger.warn("Exception encountered during context initialization - " +
+							"cancelling refresh attempt: " + ex);
+				}
+
+				// Destroy already created singletons to avoid dangling resources.
+				destroyBeans();
+
+				// Reset 'active' flag.
+				cancelRefresh(ex);
+
+				// Propagate exception to caller.
+				throw ex;
+			}
+
+			finally {
+				// Reset common introspection caches in Spring's core, since we
+				// might not ever need metadata for singleton beans anymore...
+				resetCommonCaches();
+			}
+		}
+	}
+
+
+
+
