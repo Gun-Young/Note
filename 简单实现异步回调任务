@@ -1,0 +1,96 @@
+1. 执行任务：用于异步工作
+public interface Worker  {
+    String action(Object object);
+}
+
+
+
+2.监听器：用于回调
+public interface Listener {
+    void result(Object result);
+}
+
+
+
+3.包装类： 包装参数，任务和监听器
+public class Wrapper {
+
+    private Object param;
+    private Worker worker;
+    private Listener listener;
+
+    public Object getParam() {
+        return param;
+    }
+
+    public void setParam(Object param) {
+        this.param = param;
+    }
+
+    public Worker getWorker() {
+        return worker;
+    }
+
+    public void setWorker(Worker worker) {
+        this.worker = worker;
+    }
+
+    public Listener getListener() {
+        return listener;
+    }
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
+}
+
+
+4. 简易框架
+public class Bootstrap {
+    public static void main(String[] args) {
+        Bootstrap bootstrap = new Bootstrap();
+        //包装类
+        Wrapper wrapper = new Wrapper();
+        //设置任务处理
+        wrapper.setWorker(new Worker() {
+            @Override
+            public String action(Object object) {
+                try{
+                    Thread.sleep(1000);
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
+                return object+" world";
+            }
+        });
+        //设置数据
+        wrapper.setParam("hello");
+        //设置监听器
+        wrapper.setListener(new Listener() {
+            @Override
+            public void result(Object result) {
+                System.out.println(Thread.currentThread().getName());
+                System.out.println(result);
+            }
+        });
+
+        bootstrap.doWork(wrapper);
+        System.out.println(Thread.currentThread().getName());
+    }
+
+    private Wrapper doWork(Wrapper wrapper) {
+        //新起线程，异步工作
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Worker worker = wrapper.getWorker();
+                String result = worker.action(wrapper.getParam());
+                wrapper.getListener().result(result);
+            }
+        }).start();
+        return wrapper;
+    }
+}
+
+
+
