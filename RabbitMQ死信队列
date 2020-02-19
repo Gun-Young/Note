@@ -1,0 +1,32 @@
+死信队列的使用
+参考文章地址：https://blog.csdn.net/zhangcongyi420/article/details/100126666
+             https://www.cnblogs.com/mfrank/p/11184929.html
+
+
+死信队列使用场景：
+1. 消息被否定确认，使用channel.basicNack或channel.basicReject,并且此时requeue为false(不重回队列)
+2. 消息在队列的存活时间超过设置的TTL时间
+3. 消息队列的消息数量已经超过最大队列长度
+    那么该消息将成为"死信"，死信会被RabbitMQ进行特殊处理，如果配置了死信队列，那么该消息将
+会被丢进死信队列中，如果没有配置，则该消息将会被丢弃。
+
+
+生产端：
+      生产端生产端的消息会有过期时间，生产端绑定死信队列，当消息没有被消费而过期时，
+	  消息会被路由到死信队列。
+	  提供一个死信队列的消费端监听死信队列
+	  
+	  
+消费端：
+   消息被拒绝，且requeue=false 
+    当消费者要过滤某些消息的时候，那部分被过滤掉的消息如果不设置退回，即消息重回队列，
+	这些消息就变成了死信
+    channel.basicNack(envelope.getDeliveryTag(),false,false);
+	  
+	  
+
+MQ: 队列达到最大长度
+       比如我们设置某个队列的最大可承载消息数量数100个，超出的消息将会被路由到死信队列
+
+
+
