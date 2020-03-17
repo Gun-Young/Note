@@ -1,0 +1,62 @@
+Java 内存模型的三大特性
+
+一. 主存与工作内存
+    java的内存模型规定所有的变量都是存在主存中，每个线程都有自己的工作内存。线程对变量的所有操作
+	都必须在工作内存中进行，而不能直接对主存进行操作，并且每个线程不能访问其他线程的工作内存。
+	由于java中的每个线程都有自己的工作空间，多个线程在同时处理一个共享变量的时候，就会出现线程安全问题。
+	
+	
+	
+	
+二. 原子性：
+      即一个操作要么全部执行并且在执行的过程中不被任何因素打断，要不都不执行
+	  java 提供了两种方式：显示锁Lock 和 隐式锁synchronized
+	  
+	
+二. 可见性
+     在多线程的环境下，某个变量如果被其中一个线程给修改了，其他线程能够立即直到这个变量已经被修改了，
+	 当其他线程要读取这个变量的时候，最终会去内存中读取，而不是从自己的工作空间中读取。
+	 java 提供了volatile,final,synchronized
+	 
+	 
+	 
+三. 有序性
+      当我们写好代码后，虚拟机不一定会按照我们写的代码的顺序来执行，例如：
+	   int a = 1;
+	   int b = 2;
+	   可能会编译成
+	   int b = 2;
+	   int a = 1;
+	   虚拟机在进行代码编译优化的时候，对于那些改变顺序之后不会对最终变量的值造成影响的代码，是有可能进行重排的。
+	   虽然对变量的值没有造成影响，但是可能会出现线程安全问题。
+	   public class NoVisibility{
+			private static boolean ready;
+			private static int number;
+
+			private static class Reader extends Thread{
+					public void run(){
+					while(!ready){
+					     //它会让掉当前线程CPU的执行时间，使正在运行运行的线程重新变成就绪状态
+						 //并重新竞争CPU的调度全，它可能会获取到，也有可能被其他线程获取到。
+						Thread.yield();  
+					}
+					System.out.println(number);
+				}
+			}
+			public static void main(String[] args){
+				new Reader().start();
+				number = 42;   //这里和下面的可能会进行指令重排
+				ready = true;    //指令重排
+			}
+		}
+	   那时就不一定会打印出42了。
+	   Java 提供了volatile和synchronized保证有序性
+	   
+	   
+	   
+	   
+	   
+	   
+	   
+	   
+	  
