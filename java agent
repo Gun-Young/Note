@@ -1,0 +1,66 @@
+Java探针
+
+一. java agent使用
+    
+	1.编写一个Java类，并包含两个方法
+		public static void premain(String agentArgs, Instrumentation inst)  ---- 1
+		public static void premain(String agentArgs) ----2
+		
+		** 如果1存在，2就会忽略；如果1不存在，就执行2
+		示例：
+		public class XingzhiAgent {
+			public static  void premain(String agentArgs, Instrumentation inst){
+				System.out.println("this is agent");
+				System.out.println("args:"+agentArgs+"\n");
+			}
+		}
+		
+		
+
+     2.在resources 目录下添加 META-INF/MANIFEST.MF文件，其目的是指Premain-Class的类
+	    Manifest-Version: 1.0
+		Premain-Class: com.test.hahaagent.agent.XingzhiAgent
+		Can-Redefine-Classes: true
+        这里还有一空行
+		
+		
+	 3. pom文件配置打包的相关配置
+	     <build>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-jar-plugin</artifactId>
+					<version>2.3.2</version>
+					<configuration>
+						<archive>
+							<index>true</index>
+							<manifestFile>
+								src/main/resources/META-INF/MANIFEST.MF
+							</manifestFile>
+							<manifest>
+								<addDefaultImplementationEntries/>
+							</manifest>
+						</archive>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<configuration>
+						<source>1.8</source>
+						<target>1.8</target>
+					</configuration>
+				</plugin>
+			</plugins>
+		</build>
+		
+		
+	 4.打成jar包
+	    mvn clean install -Dmaven.test.skip=true
+		
+		
+	 5.使用 
+	    -javaagent:jarPath[=parameters]
+		
+		
+	
