@@ -1,0 +1,761 @@
+Netty
+
+
+一.  简单的客户端和服务端实现
+  
+  1. 服务端业务处理
+   //表示一个handler可以被多个channel安全的共享
+	@ChannelHandler.Sharable
+	public class EchoServerHandler extends ChannelInboundHandlerAdapter {
+
+		//对于每个传入的消息都会调用
+		@Override
+		public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+			ByteBuf in = (ByteBuf) msg;
+			System.out.println("服务端收到消息：" + in.toString(CharsetUtil.UTF_8));
+			//将接收的消息写给发送者，而不冲刷出站消息
+			ctx.write(in);
+		}
+
+		//当前批量读取中的最后一条消息
+		@Override
+		public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+			//将未决消息冲刷到远程节点，并且关闭Channel
+			ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+		}
+
+		//读操作期间，有异常抛出时调用
+		@Override
+		public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+			//打印异常栈信息
+			cause.printStackTrace();
+			//关闭channel
+			ctx.close();
+		}
+	}
+
+  2. 服务端引导器
+  public class EchoServer {
+
+		//监听端口
+		private final int port;
+
+		public EchoServer(int port) {
+			this.port = port;
+		}
+
+		public static void main(String[] args) throws Exception{
+			new EchoServer(8888).start();
+		}
+
+		/**
+		 * 启动服务端
+		 *
+		 * @throws Exception
+		 */
+		public void start() throws Exception {
+			//业务处理
+			final EchoServerHandler serverHandler = new EchoServerHandler();
+
+			//创建EventLoopGroup，用来接收和处理新的连接
+			EventLoopGroup group = new NioEventLoopGroup();
+			try{
+				//创建服务端启动器 serverbootStrap
+				ServerBootstrap b = new ServerBootstrap();
+				b = b.group(group);
+				//指定所使用的NIO传输Channel
+				b = b.channel(NioServerSocketChannel.class);
+				//使用指定的端口设置套接字地址
+				b = b.localAddress(new InetSocketAddress(port));
+				//添加一个EchoServerHandler到子Channel的ChannelPipeline
+				b = b.childHandler(new ChannelInitializer<SocketChannel>() {
+					@Override
+					protected void initChannel(SocketChannel ch) throws Exception {
+						//EchoServerHandler被标注为@Shareabel,所以我们可以总是使用同样的实例
+						ch.pipeline().addLast(serverHandler);
+					}
+				});
+				//异步的绑定服务器，调用sync()方法阻塞等待直到绑定成功
+				ChannelFuture f = b.bind().sync();
+				//获取Channel的CloseFuture,并且阻塞当前线程直到它完成
+				f.channel().closeFuture().sync();
+
+			}finally {
+				//关闭EventLoopGroup,释放所有资源
+				group.shutdownGracefully().sync();
+			}
+		}
+
+	}
+	
+	3.客户端业务处理
+	//表示一个handler可以被多个channel安全的共享
+	@ChannelHandler.Sharable
+	public class EchoServerHandler extends ChannelInboundHandlerAdapter {
+
+		//对于每个传入的消息都会调用
+		@Override
+		public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+			ByteBuf in = (ByteBuf) msg;
+			System.out.println("服务端收到消息：" + in.toString(CharsetUtil.UTF_8));
+			//将接收的消息写给发送者，而不冲刷出站消息
+			ctx.write(in);
+		}
+
+		//当前批量读取中的最后一条消息
+		@Override
+		public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+			//将未决消息冲刷到远程节点，并且关闭Channel
+			ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+		}
+
+		//读操作期间，有异常抛出时调用
+		@Override
+		public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+			//打印异常栈信息
+			cause.printStackTrace();
+			//关闭channel
+			ctx.close();
+		}
+	}
+	
+	
+	4.客户端引导器
+	public class EchoClient {
+		private final String host;
+		private final int port;
+
+		public EchoClient(String host, int port) {
+			this.host = host;
+			this.port = port;
+		}
+
+		public void start() throws Exception {
+			EventLoopGroup group = new NioEventLoopGroup();
+			try {
+				//创建客户端启动器
+				Bootstrap b = new Bootstrap();
+				//指定EventLoopGroup以处理客户端事件，需要使用于NIO的实现
+				b = b.group(group);
+				//适用于NIO传输的Channel类型
+				b = b.channel(NioSocketChannel.class);
+				//设置服务器的地址
+				b = b.remoteAddress(new InetSocketAddress(host, port));
+				//在创建Channel时，向Channel时，向ChannelPipeline中添加一个EchoClientHandler实例
+				b = b.handler(new ChannelInitializer<SocketChannel>() {
+					@Override
+					protected void initChannel(SocketChannel ch) throws Exception {
+						ch.pipeline().addLast(new EchoClientHandler());
+					}
+				});
+				//连接到远程节点，阻塞等到直到连接完成
+				ChannelFuture f = b.connect().sync();
+				//阻塞，直到Channel关闭
+				f.channel().closeFuture().sync();
+
+			} finally {
+				//关闭线程池，并释放所有资源
+				group.shutdownGracefully().sync();
+			}
+		}
+		public static void main(String[] args) throws Exception{
+			new EchoClient("127.0.0.1",8888).start();
+		}
+	}
+	
+
+
+
+
+
+
+
+
+
+二.Channel,EventLoop和ChannelFuture
+    ** Channel  ----- Socket
+    ** EventLoop ----控制流，多线程处理，并发
+	** ChannelFuture  -- 异步通知
+	
+	1.Channel接口
+	   基本的IO操作，bind,connect,read,write。
+	   Channel也有很多预定义的，专门化实现的广泛类层次结构的根，部分清单：
+	   ** NioSocketChannel
+	   ** NioServerSocketChannel
+	   ** EmbeddedChannel
+	   ....
+	   
+	 2. EventLoop接口
+	       EventLoop用于处理连接的生命周期中所发生的事件。
+		   Channel,EventLoop,Thread,EventLoopGroup之间的关系：
+		   ** 一个EventLoopGroup包含一个或多个EventLoop
+		   ** 一个EventLoop在它的生命周期内只和一个Thread绑定
+		   ** 所有由EventLoop处理的IO事件都将在它专有的Thread上被处理
+		   ** 一个Channel在它的生命周期内主注册于一个EventLoop
+		   ** 一个EventLoop可能会被分配给一个或多个Channel
+		   注：在这种设计中，一个给定的Channel的IO操作都是由相同的Thread执行的，实际上消除了对于同步的需要
+		   
+	 3.ChannelFuture接口
+	            Netty中所有的IO操作都是异步的，因此一个操作可能不会立即返回，所以我们需要一种用于在之后的某个事件点确定
+		 其结果的方法，可以添加监听器 addListener(),以便在某个操作完成时（无论是否成功）得到通知。
+		         ChannelFuture可以看做是将来要执行的操作的结果的占位符，什么时候被执行是不确定的，但是一定会被执行。
+		   
+
+
+
+
+三. ChannelHandler和ChannelPipeline
+       1.ChannelHandler接口
+	      它充当了所有入站和出站数据的应用程序逻辑的容器，主要用于处理数据的业务逻辑。
+		  主要有两个子类，ChannelInboundHandler(入站)和ChannelOutboundHandler(出站),之外还有很多适配器类。
+		  有许多不同类型的ChannelHandler，它们各自的功能主要取决于它们的超类，Netty以适配器类的形式提供了默认的
+		  ChannelHandler实现，旨在简化应用程序处理逻辑的开发过程。
+		  
+		  
+       2.ChannelPipeline接口
+	      个人理解：ChannelPipeline有点像FilterChain
+		  ChannelPipeline提供了ChannelHandler链的容器，并定义了用于在该链上传播入站和出站事件流的API。
+		  当Channel被创建时，它会被自动分配到它专属的ChannelPipeline。
+		  ChannelHandler安装到ChannelPipeline中的过程如下：
+		  ** 一个ChannelInitializer的实现被注册到ServerBootstrap中
+		  ** 当ChannelInitializer的initChannel()方法被调用时，ChannelInitializer将在ChannelPipeline中安装一组自定义的
+		       ChannelHandler
+		  ** ChannelInitializer将它自己从ChannelPipeline中移除
+		  
+          事件流经ChannelPipeline时，ChannelHandler工作，执行它所实现的处理逻辑，并将数据传递给链中的下一个ChannelHandler,
+		  它们的执行顺序是由它们被添加的顺序所决定的，实际上，我们称ChannelPipeline是ChannelHandler的编排顺序。
+		       -------------->ChannelInboundHandler ------------> ChannelInboundHandler
+			   -<------------ChannelOutboundHandler<---------------ChannelOutboundHandler-<--------
+           入站和出站 ChannelHandler 可以被安装到同一个 ChannelPipeline中。如果一个消息或者任何其他的入站事件被读取， 
+		   那么它会从 ChannelPipeline 的头部开始流动，并被传递给第一个 ChannelInboundHandler。这个 ChannelHandler 不一定
+           会实际地修改数据， 具体取决于它的具体功能，在这之后，数据将会被传递给链中的下一个ChannelInboundHandler。
+		   最终，数据将会到达 ChannelPipeline 的尾端， 届时，所有处理就都结束了
+
+
+
+
+
+
+
+
+
+四.传输
+    java 实现阻塞传输和非阻塞传输是两种完全不同的API，而netty为它所有的传输实现提供了一个通用的API,
+	很容易实现阻塞和非阻塞传输模式的切换。
+	下面使用netty实现阻塞和非阻塞版本：
+	/**
+     * 阻塞服务端
+     *
+     * @param port
+     * @throws Exception
+     */
+    public void oioServer(int port) throws Exception {
+        final ByteBuf buf = Unpooled.unreleasableBuffer(Unpooled.copiedBuffer("Hi!\r\n", Charset.forName("UTF-8")));
+        EventLoopGroup group = new OioEventLoopGroup();
+        try {
+            //创建ServerBootstrap
+            ServerBootstrap b = new ServerBootstrap();
+            b.group(group);
+            //使用OioServerSocketChannel以允许阻塞模式
+            b.channel(OioServerSocketChannel.class);
+            //监听端口连接
+            b.localAddress(new InetSocketAddress(port));
+            //指定ChannelInitializer，对于每个已接受的连接都调用它
+            b.childHandler(new ChannelInitializer<SocketChannel>() {
+                @Override
+                protected void initChannel(SocketChannel ch) throws Exception {
+                    //添加一个ChannelInboundHandlerAdapter以拦截和处理事件
+                    ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                        @Override
+                        public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                            //将消息写到客户端，并添加ChannelFutureListener，
+                            //以便消息一被写完就关闭连接
+                            ctx.writeAndFlush(buf.duplicate())
+                                    .addListener(ChannelFutureListener.CLOSE);
+                        }
+                    });
+                }
+            });
+            //绑定服务器以接受连接
+            ChannelFuture f = b.bind().sync();
+            f.channel().closeFuture().sync();
+        } finally {
+            //释放所有的资源
+            group.shutdownGracefully().sync();
+        }
+    }
+
+
+    /**
+     * 非阻塞服务端
+     *
+     * @param port
+     * @throws Exception
+     */
+    public void nioServer(int port) throws Exception {
+
+        final ByteBuf buf = Unpooled.unreleasableBuffer(Unpooled.copiedBuffer("Hi!\r\n", Charset.forName("UTF-8")));
+        //注意这里会不一样
+        EventLoopGroup group = new NioEventLoopGroup();
+        try {
+            //创建ServerBootstrap
+            ServerBootstrap b = new ServerBootstrap();
+            b.group(group);
+            //使用NioServerSocketChannel以允许非阻塞模式
+            b.channel(NioServerSocketChannel.class);   // -------这里不一样
+            //监听端口连接
+            b.localAddress(new InetSocketAddress(port));
+            //指定ChannelInitializer，对于每个已接受的连接都调用它
+            b.childHandler(new ChannelInitializer<SocketChannel>() {
+                @Override
+                protected void initChannel(SocketChannel ch) throws Exception {
+                    //添加一个ChannelInboundHandlerAdapter以拦截和处理事件
+                    ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                        @Override
+                        public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                            //将消息写到客户端，并添加ChannelFutureListener，
+                            //以便消息一被写完就关闭连接
+                            ctx.writeAndFlush(buf.duplicate())
+                                    .addListener(ChannelFutureListener.CLOSE);
+                        }
+                    });
+                }
+            });
+            //绑定服务器以接受连接
+            ChannelFuture f = b.bind().sync();
+            f.channel().closeFuture().sync();
+        } finally {
+            //释放所有的资源
+            group.shutdownGracefully().sync();
+        }
+    }
+	
+	
+
+
+
+
+
+五.ByteBuf ---- Netty的数据容器
+    
+        网络数据的基本单位是字节，Netty提供了ByteBuf处理数据
+		
+		ByteBuf Api优点：
+		** 它可以被用户自定义的缓冲区类型扩展
+		** 通过内置的符合缓冲区类型实现了透明的零拷贝
+		** 容量可以按需增长（类似JDK的StringBuilder）
+		** 在读和写两种模式之间切换不需要调用ByteBuffer(java原生类)的flip()方法
+        ** 读和写使用了不同的索引
+		** 支持方法的链式调用
+		** 支持引用计数
+        ** 支持池化
+		
+		
+		todo---待学习
+		
+		
+
+
+
+
+
+
+
+六： ChannelHandler 和 ChannelPipeline
+
+      1.Channel的生命周期
+			 ChannelUnregistered  --- Channel已经被创建，但是还未注册到EventLoop
+			 ChannelRegistered   --- Channel已经被注册到了EventLoop
+			 ChannelActive  --- Channel处于活动状态（已经连接到它的远程节点）。它现在可以接收和发送数据了
+			 ChannelInactive --- Channel没有连接到远程节点
+			 
+			 ChannelRegistered -----> ChannelActive ----> ChannelInActive ----->ChannelUnregistered
+			 当以上状态发生改变时，将会生成对应的事件，这些事件将会被转发给ChannelPipeline中的ChannelHandler,
+			 其可以随后对它们做出响应。
+		 
+		 
+		 2. ChannelHandler的生命周期
+		      在ChannelHandler被添加到ChannelPipeline中或者被从ChannelPipeline中移除时会调用这些操作，
+			  这些方法中的每一个都接受一个ChannelHandlerContext参数。
+			  
+			  handlerAddeed   ---- 当把ChannelHandler添加到ChannelPipeline中时被调用
+			  handlerRemoved  ---- 当从channelPipeline中移除ChannelHandler时被调用
+			  exceptionCaught  ---- 当处理过程中ChannelPipeline中有错误产生时被调用
+			  
+			  **** ChannelHandler两个重要的子接口
+			         ChannelInboundHandler   ---- 处理入站数据以及各种状态变化
+					 ChannelOutboundHandler  ---- 处理出站数据并且允许拦截所有的操作
+					 
+			 **** pipeline中每个ChannelHandler主要负责转发事件到链中的下一个适配器，而且
+			         每个channelhandler需要做什么都取决于它的超类（是入站还是出站）
+					 
+					 
+					 
+		 3.ChannelInboundHandler 接口
+			   这些方法将会在数据被接收时或者与其对应的Channel状态发生改变时被调用，这些方法和Channel的生命周期密切相关。
+			   channelRegistered  ---- 当Channel已经注册到它的EvnetLoop，并且能够处理IO时被调用
+			   channelUnregistered  ---- 当Channel从它的EventLoop注销并且无法处理任何IO时被调用
+			   channelActive ---- 当Channel处于活动状态时被调用，Channel已经连接/绑定并且已经就绪
+			   channelInactive --- 但Channel离开活动状态，并且不再连接它的远程节点时被调用
+			   channelReadComplete --- 当Channel的上一个读操作完成时被调用
+			   channelRead ---- 当从Channel读取数据时被调用
+			   ChannelWritabilityChanged   --- 当 Channel 的可写状态发生改变时被调用。用户可以确保写操作不会完成得太快（以避免发生 OutOfMemoryError）
+																		  或者可以在 Channel 变为再次可写时恢复写入。可以通过调用 Channel 的 isWritable()方法来检测Channel 的可写性。
+																		  与可写性相关的阈值可以通过 Channel.config().setWriteHighWaterMark()和 Channel.config().setWriteLowWaterMark()
+																		  方法来设置。
+			   userEventTriggered ---- 当ChannelInboundHandler.fireUserEventTriggered()方法被调用时被调用，因为一个POJO已经被
+		                                                   传经了ChannelPipeline
+					
+		 
+		 4.ChannelOutboundHandler 接口
+		    出站操作和数据将由ChannelOutboundHandler处理，它的方法将被Channel,ChannelPipeline和ChannelHandlerContext调用
+			下面ChannelOutboundHandler本身的方法，忽略了继承ChannelHandler的方法
+			 bind(ChannelHandlerContext,SocketAddress,ChannelPromise)  ---- 当请求将Channel绑定到本地地址时被调用
+			 connect(ChannelHandlerContext,SocketAddress,ChannelPromise)  ---- 当请求将Channel连接到远程节点时被调用
+			 disConnect(ChannelHandlerContext,ChannelPromise)  ---- 当请求将Channel从远程节点断开时被调用
+			 close(ChannelHandlerContext,ChannelPromise) --- 当请求关闭Channel时被调用
+			 deregister(ChannelHandlerContext,ChannelPromise) --- 当请求将Channel从它的EventLoop注销时被调用
+			 read(ChannelHandlerContext)  --- 当请求从channel读取更多的数据时被调用
+			 flush(ChannelHandlerContext)  --- 当请求通过Channel将入队数据冲刷到远程节点时被调用
+			 write(ChannelHandlerContext,Object，ChannelPromise) --- 当请求通过Channel将数写到远程节点时被调用
+			 
+			 *** ChannelPromise是ChannelFuture的一个子类，其定义了一写可写的方法，如setSuccess和setFailure,以便在操作完成时得到通知。
+			 
+			 
+			 
+		5. ChannelHandlerAdapter 适配器
+		            适配器继承自对应的ChannelHandler.
+			        ChannelHandlerAdapter 还提供了实用方法 isSharable()。如果其对应的实现被标注为 Sharable， 那么这个方法将返回 true，
+			表示它可以被添加到多个 ChannelPipeline中。
+                    在 ChannelInboundHandlerAdapter 和 ChannelOutboundHandlerAdapter 中所提供的方法体调用了其相关联的 
+			ChannelHandlerContext 上的等效方法，从而将事件转发到了 ChannelPipeline 中的下一个 ChannelHandler 中。
+			 
+        
+		
+		6.资源管理  ----- 需要手动释放资源
+		    *** 当某个ChannelInbounHandler的实现重写channelRead()方法时，它将负责显式的释放与池化的ByteBuf实例
+			      相关的内存。
+				  ReferenceCountUtil.release(msg);
+				 
+			*** 一个更简单的方式是使用SimpleChannelInboundHandler,它会自动释放资源，所以你不应该存储指向任何消息
+		          的引用供将来使用，因为这些引用将会失效。
+		
+		    *** 比如channelRead()操作直接消费入站消息，也就是说，它不会通过调用ChannelHandlerContext.fireChannelRead()
+			      方法将入站消息转发给下一个ChannelInboundHandler,需要进行手动释放。
+				  
+		    *** 总之，如果一个消息被消费或丢弃了，并且没有传递给ChannelPiPeline中的下一个handler,那么用户就有责任调用
+			      ReferenceCountUtil.release()。如果消息到达了实际的传输层，那么当它被写入时或者Channel关闭时，都将被自动
+				  释放。
+		
+		
+		7.ChannelPipeline 接口
+		    ChannelPipeline 是一个拦截流经Channel的入站和出站事件的ChannelHandler实例链。
+			每一个新创建的Channel都将会被分配一个新的ChannelPipeline，这项关联是永久性的，Channel即不能附加另一个ChannelPipeline,
+			也不能分离其当前的，在Netty组件的生命周期中，这是一个固定的操作，不需要开发人员的干预
+			       
+			根据事件的起源，事件将被ChannelInboundHandler或ChannelOutboundHandler处理，随后，通过调用ChannelHandlerContext
+			实现，它将被转发给同一个超类型的下一个ChannelHandler
+			
+			ChannelHandlerContext使得ChannelHandler能够和它的ChannelPipeline以及其他的ChannelHandler 交 互 。 ChannelHandler 
+			可 以 通 知 其 所 属 的 ChannelPipeline 中 的 下 一 个ChannelHandler，甚至可以动态修改它所属的ChannelPipeline。
+            
+			                                  channnelHandlerContext          channnelHandlerContext             channnelHandlerContext
+			 ------>入站处理器1--------------------->入站处理器2--------------------->出站处理器---------------------------->出站处理器------------->
+             *** 修改 ChannelPipeline
+               addFirst     ----  将ChannelHandler添加到ChannelPipeline
+               addLast      ---- 将ChannelHandler添加到ChannelPipeline
+               addAfter     ---- 将ChannelHandler添加到ChannelPipeline
+               addBefore  ----	将ChannelHandler添加到ChannelPipeline
+               remove      ----  将ChannelHandler从ChannelPipeline删除
+               replace      ----	将ChannelPipeline中的一个ChannelHandler替换为另一个ChannelHandler
+			   
+			   ******重要*****
+			   ChannelPipeline中的每一个ChannelHandler都是通过它的EventLoop来处理传递给它的事件（一个EventLoop可以处理多个Channel）。
+			   所以至关重要的是不能阻塞这个线程，因为这会对整体的IO处理产生负面的影响。
+			   可以将阻塞操作放到一个executor中，扔给一个独立的线程池来处理。或者将阻塞的消息放入外部队列。
+			   
+	    
+ 
+         8.ChannelHandlerContext接口
+		     ChannelHandlerContext代表了ChannelHandler和ChannelPipeline之间的关联，每当ChannelHandler添加到ChannelPipeline中时，
+			 都会创建ChannelHandlerContext.ChannelHandlerContext的主要功能是管理它所关联的ChannelHandler和在同一个ChannelPIpeline
+			 中的其他ChannelHandler之间的交互
+			 
+			 
+			 ****注意，重点****
+			 ChannelHandlerContext有很多方法，其中一些方法也存在于Channel和ChannelPipeline本身上，但是有一点重要的不同，如果调用
+			 Channel或者ChannelPipeline上的这些方法，它们将沿着整个ChannelPipeline进行传播。而调用位于ChannelHandlerContext上相同的
+			 方法，则将从当前所关联得ChannelHandler开始，并且只会传播给位于该ChannelPipeline中的下一个能够处理该事件的ChannelHandler.
+			 
+			    alloc ---- 返回和这个实例相关的Channel所配置的ByteBufAllocator
+			    bind ---- 绑定到给定的SocketAddress,并返回ChannelFuture
+			    channel --- 返回绑定到这个实例的Channel
+			    close --- 关闭Channel,并返回ChannelFuture
+			    connect --- 连接给定的SocketAddress,并返回ChannelFuture
+			    deregister --- 从之前分配的 EventExecutor 注销，并返回 ChannelFuture
+				disconnect --- 从远程节点断开，并返回 ChannelFuture
+				executor --- 返回调度事件的 EventExecutor
+				fireChannelActive ---  触发对下一个 ChannelInboundHandler 上的channelActive()方法（已连接）的调用
+				fireChannelInactive --- 触发对下一个 ChannelInboundHandler 上的channelInactive()方法（已关闭）的调用
+				fireChannelRead --- 触发对下一个 ChannelInboundHandler 上的channelRead()方法（已接收的消息）的调用
+				fireChannelReadComplete --- 触发对下一个ChannelInboundHandler上的channelReadComplete()方法的调用
+				fireChannelRegistered --- 触发对下一个 ChannelInboundHandler 上的fireChannelRegistered()方法的调用
+				fireChannelUnregistered  --- 触发对下一个 ChannelInboundHandler 上的fireChannelUnregistered()方法的调用
+				fireChannelWritabilityChanged --- 触发对下一个 ChannelInboundHandler 上的fireChannelWritabilityChanged()方法的调用
+				fireExceptionCaught --- 触发对下一个 ChannelInboundHandler 上的fireExceptionCaught(Throwable)方法的调用
+				fireUserEventTriggered  ---触发对下一个 ChannelInboundHandler 上的fireUserEventTriggered(Object evt)方法的调用
+				handler --- 返回绑定到这个实例的 ChannelHandler
+				isRemoved ---- 如果所关联的 ChannelHandler 已经被从 ChannelPipeline中移除则返回 true
+				name --- 返回这个实例的唯一名称
+				pipeline --- 返回这个实例所关联的 ChannelPipeline
+				read  ---  将数据从Channel读取到第一个入站缓冲区；如果读取成功则触发一个channelRead事件，
+				                并（在最后一个消息被读取完成后）通 知 ChannelInboundHandler 的 channelReadComplete
+				                (ChannelHandlerContext)方法
+				write --- 通过这个实例写入消息并经过ChannelPipeline
+				writeAndFlush --- 通过这个实例写入并冲刷消息并经过ChannelPipeline
+							 
+               注意两点：
+			      **** ChannelHandlerContext和ChannelHandler之间的关联(绑定)是永远不会改变的，所以缓存对它的引用是安全的
+				  **** 相对于其他类的同名方法，ChannelHandlerContext的方法将产生更短的事件流，应该尽可能的利用这个特性来获取最大的性能。
+ 
+
+
+                **** 为什么会想要从ChannelPipeline中的某个特定点开始传播事件呢？
+				     1.为了减少将事件传经对它不敢兴趣的ChannelHandler所带来的开销
+					 2.为了避免将事件传经那些可能会对它感兴趣的ChannelHandler
+					 
+                     要想调用从某个特定的channelHandler开始的处理过程，必须获取到在该ChannelHandler之前的ChannelHandler所关联的
+					 ChannelHandlerContext。这个ChannelHandlerContext将调用和它所关联的ChannelHandler之后的ChannelHandler
+
+                     因为一个ChannelHandler可以从属于多个ChannelPipeline,所以它也可以绑定到多个ChannelHandlerContext实例。
+					 对于这种用法旨在多个ChannelPipeline中共享同一个ChannelHander,对应的ChannelHandler必须要使用@Sharable
+					 注解标注；否则，试图将它添加到多个ChannelPipeline时将会触发异常。为了安全的被用于多个并发的Channel(即连接)，
+					 这样的ChannelHandler必须是线程安全的。
+					 总之，只应该在确定了你的ChannelHandler是线程安全的时才使用@Sharable注解。
+					 
+					 为何要共享同一个ChannelHandler？
+					 在多个ChannelPipeline中安装同一个ChannelHandler的一个常见的原因时用于收集跨越多个Channel的统计信息。
+					 
+					 
+
+
+
+
+
+
+
+七. EventLoop 和线程模型
+     1. 线程池化
+	     ** 从池的空闲线程列表中选择一个Thread,并指派它去运行一个已提交的任务（一个Runnable的实现）
+		 ** 当任务完成时，将该Thread返回给该列表，使其可以被重用。
+         虽然池化和重用线程相对于简单的为每个任务都创建和销毁线程使一种进步，但是它不能消除由上下文切换
+		 所带来的开销，其将随着线程数量的增加很快变得明显，并且在高负载下愈演愈烈。
+
+     2. JDK的任务调度
+	      //创建一个其线程池具有10个线程的ScheduledExecutorService
+	      ScheduledExecutorService executor = Executors.newScheduledThreadPool(10);
+		  //60秒后执行runnable的任务
+	      ScheduledFuture future = executor.schedule(
+		      new Runnale(){
+			      public void run(){
+				      System.out.println("60 seconds later");
+				  }
+			  }
+		  60,TimeUnit.SECONDS);
+		  //一旦调度任务执行完成，就关闭ScheduledExecutorService以释放资源
+		  executor.shutdown();
+	     **** 虽然JDK直接了当，但是在高负载下它将带来性能上的负担。
+	    
+	 
+     3. EventLoop 线程的分配
+	              异步传输实现只使用了少量的EventLoop，而且在当前的线程模型中，它们可能会被多个Channel所共享，
+		  这使得可以通过尽可能少量的Thread来支撑大量的Channel，而不是每个Channel分配一个Thread.
+		          EventLoopGroup负责为每个新创建的Channel分配一个EventLoop。在当前实现中，使用顺序循环的方式
+		 进行分配以获取一个均衡的分布，并且相同的EventLoop可能会被分配多个Channel.
+		           一旦一个Channel被分配一个EventLoop，它将在它的整个生命周期中都使用这个EventLoop,可以保证
+		 ChannelHandler实现中的线程安全和同步。
+		 
+		  
+
+
+
+
+
+
+
+八.编解码器
+      编码器操作出站数据，将结构化数据转化成字节流
+	  解码器操作入站数据，将字节流转换成结构化数据
+	  
+	  1. 解码器
+	     ** 将字节节码为消息-----ByteToMessageDecoder和ReplayingDecoder
+		 ** 将一种消息类型解码为另一种 ----- MessageToMessageDecoder
+         因为解码器是负责将入站数据从一种合适转换到另一种格式，所以它实现了ChannelInboundHandler.
+		 
+	  2. 什么时候使用解码器
+	       每当需要为ChannelPipeline中的下一个ChannelInboundHandler转换入站数据时会用到。
+		 
+
+      3. 抽象类ByteToMessageDecoder
+	       由于你不可能知道远程节点是否一次性地发送给一个完整的消息，所以这个类会对入站的数据进行缓冲，直到它
+		   准备好处理。
+
+
+   
+
+
+
+
+
+九.注意
+    1.Channel和ChannelHandlerContext中write的区别
+	    Channel中的write方法，会让事件从ChannelPipeline中的第一个ChannelHandler开始处理，使得
+	    数据完整的经过ChannelPipeline中的每一个环节。
+	   
+	    ChannelHandlerContext的write方法：仅从下一个ChannelHandler开始处理，只会经过剩下的
+	    环节，并不会完整的经过ChannelPipeline中的每个环节。
+	  
+	 2.
+	   
+	  
+	   
+
+
+
+
+
+----------------------------------------------------------------------------------------------------------------
+TCP 粘包拆包
+
+一.场景
+   假设客户端发送了两个数据包D1和D2给服务端，由于服务端一次读取到的字节数是不确定的，可能存在四种情况：
+   1. 服务端分两次读取到了两个独立的数据包，分别时D1和D2,没有粘包和拆包
+   2. 服务端一次接收到了两个数据包，D1和D2粘合在一起，被称为TCP粘包
+   3. 服务端分两次读取了两个数据包，第一次读取了完整的D1和D2包的一部分，第二次读读取到了D2包的剩余内容，被称为TCP拆包
+   4.服务端分两次读读取到了两个数据包，第一次读取了D1的部分内容，第二次读取了D1包的剩余部分和D2完整包。
+   
+   
+ 
+ 二.产生原因：
+	 1.应用程序write写入的字节大小大于套接口发送缓冲区大小
+	 2.进行MSS大小的TCP分段
+	 3.以太网帧的payload大于MTU进行IP分片
+	 解释1：
+	 TCP是以流的方式传输数据，传输的最小单位为一个报文段(segment),tcp header中有个Options标识，
+	 常见的标识为mss(Maximum Segment Size)指的是，连接层每次传输的数据有个最大限制，MTU(Maximum Transmission Unit),
+	 一般是1500bit,超过这个量要分成多个报文段，mss则是这个最大限制减去TCP的header,光是要传输的数据大小，一般是1460bit,
+	 换成字节，也就是180多字节。
+	 TCP为提高性能，发送端会将需要发送的数据发送到缓冲区，等待缓冲区满了之后，再将缓冲区中的数据发送到接收方，
+	 同理，接收方也有缓冲区这样的机制，来接收数据
+	 
+	 解释2：
+	 发送方原因：TCP默认使用Nagle算法，而Nagle算法主要做的两件事：只有上一个分组得到确认，才发送下一个分组，
+	                      收集多个小分组，在一个确认到来时一起发送，Nagle算法造成了发送方可能存在粘包现象
+	 接收方原因： TCP接收到分组时，应用层程序不会立即处理，TCP将接收的分组放到缓存中，然后应用程序主动从缓存中
+						 读取分组，当TCP接收分组的速度大于应用程序读取分组的速度时，多个包就会被存放在缓存中，应用程度读取时，就会
+						 读取多个首尾相连在一起的包
+	 
+	 
+	 
+	 
+
+三.粘包拆包的解决办法
+    无论TCP的拆包和TCP粘包本质问题就是无法区分包的界限，可用以下三种办法区分包的界限
+	1. 消息定长，比如每个报文的大小为固定的长度200字节，如果不够，空位补空格
+	2.在包尾增加分割符
+	3.将消息分为消息头和消息体，消息头要包含表示消息体的总长度的字段。
+
+     补充：（netty权威指南） ---- 分隔符和定长解码器
+	 TCP以流的方式进行数据传输，上层的应用协议为了对消息进行区分，往往采用四种方式：
+	 （1）消息长度固定，累计读取到长度总和为定长的LEN的报文后，就认为读取到了一个完整的消息；将计数器
+	         置位，重新开始读取下一个数据报。
+	   (2)  将回车换行符作为消息结束符，例如FTP协议，这种方式在文本协议种应用比较广泛。
+	   (3) 将特殊的分隔符作为消息的结束标志，回车换行符就是一种特殊的结束分隔符
+	   (4) 通过在消息头中定义长度字段来标识消息的总长度
+
+
+
+
+四. Nagle算法：
+        TCP/IP协议中，无论发送多少数据，总是要在数据(DATA)前面加上协议头(TCP Header+IP Header)，同时，对方接收到数据，也需要发送ACK表示确认。
+即使从键盘输入的一个字符，占用一个字节，可能在传输上造成41字节的包，其中包括1字节的有用信息和40字节的首部数据。这种情况转变成了4000%的消耗，这样的情况对于重负载的网络来是无法接受的。
+为了尽可能的利用网络带宽，TCP总是希望尽可能的发送足够大的数据。（一个连接会设置MSS参数，因此，TCP/IP希望每次都能够以MSS尺寸的数据块来发送数据）。
+
+        Nagle算法就是为了尽可能发送大块数据，避免网络中充斥着许多小数据块。
+        Nagle算法的基本定义是任意时刻，最多只能有一个未被确认的小段。 所谓“小段”，指的是小于MSS尺寸的数据块，所谓“未被确认”，是指一个数据块发送出去后，没有收到对方发送的ACK确认该数据已收到。
+    Nagle算法的规则：
+		1.如果SO_SNDBUF(发送缓冲区）中的数据长度达到MSS，则允许发送；
+		2.如果该SO_SNDBUF中含有FIN，表示请求关闭连接，则先将SO_SNDBUF中的剩余数据发送，再关闭；
+		3.设置了TCP_NODELAY=true选项，则允许发送。TCP_NODELAY是取消TCP的确认延迟机制，相当于禁用了Nagle 算法。
+		4.未设置TCP_CORK选项时，若所有发出去的小数据包（包长度小于MSS）均被确认，则允许发送;
+		5.上述条件都未满足，但发生了超时（一般为200ms），则立即发送。
+	 
+	 
+	 
+
+
+
+-----------------------最佳实践---------------------------------
+Netty多线程编程的最佳实践：
+（1）创建两个NioEventLoopGroup,用于逻辑隔离NIO Acceptor和NIO IO线程
+（2）尽量不要在ChannelHandler中启动用户线程（解码后用于将POJO消息派发到后端也业务线程除外）
+（3）解码要放在NIO线程调用的解码Handler中进行，不要切换到用户线程中完成消息的解码
+（4）如果业务逻辑操作非常简单，没有复杂的业务逻辑，也没有可能会导致线程被阻塞的磁盘操作，
+          数据库操作，网络操作等，可以直接在NIO线程上完成业务逻辑编排，不需要切换到用户线程
+（5）如果业务i逻辑处理复杂，不要在NIO线程上完成 ，简易将解码后的POJO消息封装成TASK，
+          派发到业务线程池中，由业务线程执行，以保证NIO线程尽快被释放，处理其他的IO操作。
+		 
+
+
+
+------------------------------volatile正确使用----------------
+volatile是java 提供的最轻量级的同步机制，Java内存模型对volatile专门定义了一些特殊的规则
+
+（1） 线程可见性：但一个线程修改了被volatile修饰的变量后，无论是否枷锁，其他的线程都可以立即看到最新的
+          修改，而普通变量却做不到这一点。
+（2）禁止指令重新排序优化，普通的变量仅仅保证在该方法的执行过程中所有依赖赋值结果的地方都能获取正确
+          的结果，而不能保证变量赋值操作的顺序与程序代码的执行顺序一致。
+
+
+
+------------------------------------------channelhandler--------------------------------
+
+1. 如果ChannelHandler被注解为@Sharable，全局只有一个handler实例，它会被多个Channeld得Pipeline共享，
+   会被多线程并发调用，因此它不是线程安全得；如果存在跨ChannelHandler的实例级变量共享，需要特别注意，它可能不是
+   线程安全的。在整个ChannelPipeline执行过程中，可能会发生线程切换，此时，如果同一个对象在多个ChannelHandler中
+   被共享，可能会被多线程并发操作。
+   
+ 2.只有在确定可ChannelHandler是线程安全的，才使用@Sharable
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
