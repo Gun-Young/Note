@@ -269,7 +269,13 @@
 
 		}
 
-	
+	       注意： Byte Buddy会在to方法所给定的拦截目标中，确定最优的调用方法。选择过程只是非常简单地解析这个类型的唯一静态方法而已。
+	       我们还可以将其委托给某个类的实例，如果是这样的话，Byte Buddy将会考虑所有的虚方法（virtual method）。如果类或实例上有多个这样的方法，
+	       那么Byte Buddy首先会排除掉所有与指定instrumentation不兼容的方法。在剩余的方法中，库将会选择最佳的匹配者，通常来讲这会是参数最多
+	       的方法。我们还可以显式地指定目标方法，这需要缩小合法方法的范围，将ElementMatcher传递到MethodDelegation中，就会进行方法的过滤。
+	       例如，通过添加如下的filter，Byte Buddy只会将名为“intercept”的方法视为委托目标：
+                 
+		 MethodDelegation.to(ToStringInterceptor.class).filter(ElementMatchers.named(“intercept”))
 	
    
    
