@@ -1,0 +1,511 @@
+字节码增强
+
+由于jvm的规范存在，只要最终可以生成符合规范的字节码就可以在JVM上运行。
+参考地址：https://segmentfault.com/a/1190000020345321?utm_source=tag-newest
+
+
+一.字节码结构 (jclasslib可以看到响应的参数)
+1. 魔数 --- magic number
+    所有的.class文件的前四个字节都是魔数，魔数的固定值为：0xCAFEBABE(咖啡宝贝).魔数放在文件的开头，
+	jvm可以根据文件的开头来判断这个文件是否可能是一个.class文件，如果是，才会继续进行之后的操作。
+
+
+2.版本号
+   版本号为魔数之后的4个字节，前两个字节表示次版本号(Minor Version)，后两个字节标识主版本号(Major Version).
+
+
+3.常量池（Constant pool）
+   紧接着主版本号之后的字节为常量池入口。常量池中存储两类常量：字面量与符号引用。
+   字面量：代码中声明为Final的常量值
+   符号引用： 类和接口的全局限定名，字段的名称和描述符，方法的名称和描述符
+   
+   为什么需要类和接口的全局限定名呢？系统引用类或者接口的时候是通过内存地址进行操作的，Java虚拟机在没有将类加载到内存的时候根本没有分配内存地址，
+   也就不存在对内存的操作，所以java虚拟机首先需要将类加载到虚拟机中，那么这个对类定位的过程，是需要通过全局限定
+   名来判别唯一性。
+   
+   常量池整体上分为两个部分： 常量池计数器以及常量池数据区
+   ** 常量池计数器(constant_pool_count)： 由于常量的数量不固定，所以需要先放置两个字节来表示常量池容量技术值。
+   ** 常量数据区：数据区是由(constant_pool_count-1)个cp_info结构组成，一个cp_info结构对应一个常量，字节码中
+          共有14中类型的cp_info,每种类型的结构都是固定的。
+		  
+		  
+		  
+4. 访问标志（Acess_Flag）
+    常量池结束之后的两个字节，描述该Class是类还是接口，以及是否被Public,Abstract,Final等修饰符修饰。
+   
+   
+  
+5. 当前类名
+    访问标志后的两个字节，描述的是当前类的全限定名。这两个字节保存的值为常量池中的索引值，根据索引值就能
+	在常量池中找到这个类的全限定名。
+	
+	
+6.父类名称
+    当前类名后的两个字节，描述父类的全限定名，保存的也是常量池中的索引值
+	
+	
+7.接口信息
+   父类名称后的两个字节的接口计数器，描述了该类或父类实现的接口数量，紧接着的N个字节是所有接口名称的
+   字符串常量的索引值
+   
+  
+ 8. 字段表
+     字段表用于描述类和接口中声明的变量，包含类级别的变量以及实例变量，但是不包含方法内部声明的局部变量。
+	 
+	 
+
+9. 方法表
+   字段表结束后为方发表，方法表也是由两部分组成，第一部分为两个字节描述的方法个数，第二部分为每个方法的
+   详细信息。方法的详细信息包括方法的访问标志，方法名，方法的描述符以及方法属性。
+   
+   
+   
+   
+   
+   
+   
+   
+   
+ 二. Byte buddy  --- 字节码增强框架，底层使用的ASM
+     
+	 核心core
+	 1. ByteBuddy
+	     * 流式API方式的入口类
+		 * 提供Subclassing/Redefining/Rebasing方式改写字节码
+		 * 所有的操作依赖DynamicType.Builder进行，创建不可变的对象
+		 
+	 2.ElementMatchers(ElementMatcher)
+	    * 提供一系列的元素匹配工具类(named/any/nameEndsWith等)
+		* ElementMatcher提供对类型，方法，字段，注解进行matches的方式，类似于Predicate
+		* Junction对多个ElementMatcher进行and/or操作
+		
+	 3. Implementtion --- 用于提供动态方法的实现
+	     * FixedValue(方法调用返回固定值)
+		 * MethodDelegation ---- 方法调用委托，支持以下两种方式
+		      *** Class的static方法调用
+			  *** object的instance method方法调用
+			  
+	 4.DynamicType --- 动态类型，所有字节码操作的开始
+	      * Unloaded: 动态创建的字节码还未加载进虚拟机，需要类加载器进行加载
+		  * Loaded: 已加载到jvm中后，解析出Class表示
+		  * Default：DynamicType的默认实现，完成相关实际操作
+		  
+	 5.Builder  --- 用户创建DynamicType
+	      * MethodDefinition
+		  * FieldDefinition
+		  * AbstractBase
+		  
+	 6.AgentBuild  --- java agent的操作入口
+	 
+	 7 Transformer --- 对实例进行转换操作
+    
+   
+     常用注解：
+	 @Argument   ----  绑定单个参数
+	 @AllArguments --- 绑定所有的数组
+	 @This   --- 当前被拦截的，动态生成的那个对象
+	 @DefaultCall  ---  调用默认方法而非super方法
+	 @SuperCall  ----  用于调用父类的方法
+	 @RunTimeType --- 1.可以用在返回值，参数上，提示Bytebuddy禁用严格的类型检查
+	                                     2.提示ByteBuddy根据被拦截的方法的实际类型，对此拦截器的返回值进行Cast
+	 @Super  ----- 当前被拦截的，动态生成的那个对象的父类对象
+	 @FieldValue  ---  注入被拦截对象的一个字段的值
+	 @Origin ---- 被拦截的原始方法
+   
+   
+ 
+ 
+ 三 . byte buddy操作示例
+    
+	   /**
+		 * 创建一个继承自Object类型的类。
+		 * 这个动态创建的类与直接继承Object并且没有实现任何方法，属性和构造函数的类是等价的。
+		 * 这里没有为动态生成的类命名,bytebuddy 会基于动态类型的超类名称来随机生成类名
+		 */
+		public static void fun1() {
+			DynamicType.Unloaded<?> dynamicType = new ByteBuddy()
+					//继承至Object类
+					.subclass(Object.class)
+					//生成类
+					.make();
+			System.out.println(dynamicType.getClass().getName());
+		}
+
+		public static void fun2() throws IllegalAccessException, InstantiationException {
+
+			Class<?> dynamicType = new ByteBuddy()
+					//指定父类
+					.subclass(Object.class)
+					//根据名称来匹配需要拦截的方法
+					.method(ElementMatchers.named("toString"))
+					//拦截方法调用，返回固定值
+					.intercept(FixedValue.value("xiao xiao xing zhi"))
+					//产生字节码
+					.make()
+					//加载类
+					.load(TestAgent.class.getClassLoader())
+					//获取Class对象
+					.getLoaded();
+			System.out.println(dynamicType.newInstance().toString());
+		}
+
+
+		/**
+		 * 创建类
+		 */
+		public static void subclass() {
+			DynamicType.Unloaded<?> dynamicType = new ByteBuddy()
+					.subclass(Object.class)
+					//子类的名称
+					.name("example.Type.xingzhi")
+					.make();
+			System.out.println(dynamicType.getClass().getName());
+		}
+
+
+		/**
+		 * 子类命名策略
+		 */
+		public static void nameStrategy() {
+			DynamicType.Unloaded<?> dynamicType = new ByteBuddy()
+					//如果不指定子类名称。ByteBuddy会有一套自动的命名策略。还可以自己指定子类命名策略
+					.with(new NamingStrategy.AbstractBase() {
+						@Override
+						protected String name(TypeDescription superClass) {
+							return "xiao.xing.zhi." + superClass.getSimpleName();
+						}
+					})
+					.subclass(Object.class)
+					.make();
+			System.out.println(dynamicType.getClass().getName());
+
+		}
+
+
+		/**
+		 * 加载类
+		 * <p>
+		 * 可以通过ClassLoadingStrategy来加载这种类
+		 * 如果不指定ClassLoadingStrategy,Byte Buddy根据你提供的ClassLoader来推导出一个策略
+		 * 内置的策略定义在枚举ClassLoadingStrategy.Default中：
+		 * <p>
+		 * 1.WRAPPER:创建一个新的Wrapping类加载器
+		 * 2.CHILD_FIRST:类似WRAPPER，但是子加载器优先负责加载目标类
+		 * 3.INJECTION:利用反射机制注入动态类型
+		 */
+		public static void loadClass() {
+			Class<?> type = new ByteBuddy()
+					.subclass(Object.class)
+					.make()
+					.load(TestAgent.class.getClassLoader(), ClassLoadingStrategy.Default.WRAPPER)
+					.getLoaded();
+
+		}
+
+
+		/**
+		 * redefine
+		 * 重定义一个类时，Byte Buddy可以对一个已有的类添加属性和方法，或者删除已经存在的方法实现。新添加的方法，如果
+		 * 签名和原有方法一致，则原有方法会消失
+		 */
+		public static void redefine() {
+
+		}
+
+		/**
+		 * 类似于redifine,但是原有的方法不会消失，而是被重命名，添加后缀$original
+		 */
+		public static void rebase() {
+
+		}
+
+
+		/**
+		 * 重新加载
+		 * <p>
+		 * 得益于JVM的HostSwap特性，已加载的类可以被重新定义
+		 */
+		public static void reload() {
+
+		}
+
+
+		/**
+		 * 拦截方法
+		 */
+		public static void interceptMethos() throws IllegalAccessException, InstantiationException {
+			Foo foo = new ByteBuddy()
+					.subclass(Foo.class)
+					//匹配由Foo.class声明的方法
+					.method(ElementMatchers.isDeclaredBy(Foo.class)).intercept(FixedValue.value("one"))
+					//匹配名为foo的方法
+					.method(ElementMatchers.named("foo")).intercept(FixedValue.value("two"))
+					//匹配名为foo的方法，且入参数量为1的方法
+					.method(ElementMatchers.named("foo").and(ElementMatchers.takesArguments(1))).intercept(FixedValue.value("three"))
+					.make()
+					.load(TestAgent.class.getClassLoader())
+					.getLoaded()
+					.newInstance();
+			System.out.println(foo.bar());
+			System.out.println(foo.foo("xingzhi"));
+
+		}
+
+
+		/**
+		 * 委托方法
+		 * 使用MethodDelegation可以将方法调用给任意的POJO。
+		 * Byte Buddy不要求Source(被委托类)，Target类的方法名一致
+		 */
+		public static void methodDelegation() throws IllegalAccessException, InstantiationException {
+			Source source = new ByteBuddy()
+					.subclass(Source.class)
+					.method(ElementMatchers.named("hello")).intercept(MethodDelegation.to(Target.class))
+					.make()
+					.load(TestAgent.class.getClassLoader())
+					.getLoaded()
+					.newInstance();
+			System.out.println(source.hello("xingzhi"));
+
+		}
+
+	
+	
+   
+   
+ 
+ 
+ 四. 实例
+      功能： 拦截被@Xingzhi注解的类，对其toString方法进行拦截，返回固定值
+	  
+	  1.添加byte buddy依赖包
+	       <!-- 添加byte buddy依赖 -->
+			<dependency>
+			  <groupId>net.bytebuddy</groupId>
+			  <artifactId>byte-buddy</artifactId>
+			  <version>1.5.7</version>
+			</dependency>
+			<dependency>
+			  <groupId>net.bytebuddy</groupId>
+			  <artifactId>byte-buddy-agent</artifactId>
+			  <version>1.5.7</version>
+			</dependency>
+	  
+	  
+	  
+	  2.添加maven-shade-plugin插件
+	     插件的基本功能：
+		 ** 将依赖的jar包打包到当前的jar包（常规打包是不会将所依赖的jar包打进来）
+		 ** 对依赖的jar包进行重命名(用于类的隔离)
+		 场景： 有时候，需要将复杂的项目，包括各种xml文件属性文件，类，jar等打包到一个可以执行的jar包中，
+		              然后使用java -jar xxx.jar来运行项目。
+		  <plugins>
+			  <!-- 添加maven-shade-plugin插件 -->
+			  <plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>3.0.0</version>
+				<executions>
+				  <execution>
+					<phase>package</phase>
+					<goals>
+					  <goal>shade</goal>
+					</goals>
+					<configuration>
+					  <transformers>
+						<transformer
+								implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+						  <manifestEntries>
+						    <!-- 指定agent类路径 -->
+							<Premain-Class>com.test.young.AgentToString</Premain-Class>
+						  </manifestEntries>
+						</transformer>
+					  </transformers>
+					</configuration>
+				  </execution>
+				</executions>
+			  </plugin>
+			</plugins>
+		
+		 
+		 
+	  3. 自定义@Xingzhi注解
+	    @Inherited
+		@Retention(RetentionPolicy.RUNTIME)
+		public @interface Xingzhi {
+		}
+   
+     
+	  4. 新建agent，用于拦截被@Xingzhi注解类的toString方法，并修改方法
+	      public class AgentToString {
+				public static void premain(String args, Instrumentation instrumentation){
+					new AgentBuilder.Default()
+							//匹配以@Xingzhi注解的类
+							.type(ElementMatchers.isAnnotatedWith(Xingzhi.class))
+							.transform(new AgentBuilder.Transformer() {
+								@Override
+								public DynamicType.Builder<?> transform(DynamicType.Builder<?> builder, TypeDescription typeDescription, ClassLoader classLoader) {
+									return builder.method(ElementMatchers.named("toString"))
+											.intercept(FixedValue.value("i am xingzhi"));
+								}
+							}).installOn(instrumentation);
+				}
+			}
+ 
+       5. 新建目标类
+	        @Xingzhi
+			public class Target {
+				public String toString(){
+					return "target";
+				}
+			}
+			
+
+       6.  mvn clean install -Dmaven.test.skip=true 打包
+	   
+	   
+	   7.测试类  --- 同时指定agent jar包的位置，-javaagent:path
+	       public class TestMain {
+				public static void main(String[] args) {
+					Target haha = new Target();
+					System.out.println(haha.toString());
+				}
+			}
+	     打印xingzhi，说明类被修改了
+	   
+	       
+	     
+	   
+         	   
+			   
+
+五. 示例2
+      功能：拦截后缀名为Timed的类，对其所有的方法进行拦截，打印方法调用时间
+	       1.添加byte buddy依赖包
+	       <!-- 添加byte buddy依赖 -->
+			<dependency>
+			  <groupId>net.bytebuddy</groupId>
+			  <artifactId>byte-buddy</artifactId>
+			  <version>1.5.7</version>
+			</dependency>
+			<dependency>
+			  <groupId>net.bytebuddy</groupId>
+			  <artifactId>byte-buddy-agent</artifactId>
+			  <version>1.5.7</version>
+			</dependency>
+	  
+	  
+	  
+	  2.添加maven-shade-plugin插件
+	     插件的基本功能：
+		 ** 将依赖的jar包打包到当前的jar包（常规打包是不会将所依赖的jar包打进来）
+		 ** 对依赖的jar包进行重命名(用于类的隔离)
+		 场景： 有时候，需要将复杂的项目，包括各种xml文件属性文件，类，jar等打包到一个可以执行的jar包中，
+		              然后使用java -jar xxx.jar来运行项目。
+		  <plugins>
+			  <!-- 添加maven-shade-plugin插件 -->
+			  <plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>3.0.0</version>
+				<executions>
+				  <execution>
+					<phase>package</phase>
+					<goals>
+					  <goal>shade</goal>
+					</goals>
+					<configuration>
+					  <transformers>
+						<transformer
+								implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+						  <manifestEntries>
+						    <!-- 指定agent类路径 -->
+							<Premain-Class>com.test.young.TimeAgent</Premain-Class>
+						  </manifestEntries>
+						</transformer>
+					  </transformers>
+					</configuration>
+				  </execution>
+				</executions>
+			  </plugin>
+			</plugins>
+		
+		
+		3. 定义目标类：
+			public class TargetTimed {
+				public void hello(){
+					System.out.println("hello world");
+				}
+				public void helloSleep() throws InterruptedException {
+					Thread.sleep(1000);
+					System.out.println("hello world sleep");
+				}
+				public String helloStr(){
+					return "hello-xingzhi";
+				}
+			}
+
+
+        4. 定义agent
+		        import net.bytebuddy.agent.builder.AgentBuilder;
+				import net.bytebuddy.description.type.TypeDescription;
+				import net.bytebuddy.dynamic.DynamicType;
+				import net.bytebuddy.implementation.MethodDelegation;
+				import net.bytebuddy.matcher.ElementMatchers;
+				import java.lang.instrument.Instrumentation;
+				public class TimeAgent {
+					public static void premain(String agrs, Instrumentation instrumentation){
+						new AgentBuilder.Default()
+								//拦截以Timed结尾类
+								.type(ElementMatchers.nameEndsWith("Timed"))
+								.transform(new AgentBuilder.Transformer() {
+									@Override
+									public DynamicType.Builder<?> transform(DynamicType.Builder<?> builder, TypeDescription typeDescription, ClassLoader classLoader) {
+										//拦截所有的方法
+										return builder.method(ElementMatchers.any())
+												//委托给TimeInterceptor类处理
+												.intercept(MethodDelegation.to(TimeInterceptor.class));
+									}
+								}).installOn(instrumentation);
+					}
+				}
+       
+	   
+	     5. 定义委托类
+		        import net.bytebuddy.implementation.bind.annotation.Origin;
+				import net.bytebuddy.implementation.bind.annotation.RuntimeType;
+				import net.bytebuddy.implementation.bind.annotation.SuperCall;
+				import java.lang.reflect.Method;
+				import java.util.concurrent.Callable;
+				public class TimeInterceptor {
+					@RuntimeType   
+					public static Object intercept(@Origin Method method , @SuperCall Callable callable) throws Exception {
+						long start = System.currentTimeMillis();
+						try{
+							return callable.call();
+						}finally {
+							long end =System.currentTimeMillis();
+							System.out.println(method+"---cost---"+(end-start));
+						}
+					}
+				}
+					   
+					   
+					   
+	      6. mvn clean install -Dmaven.test.skip=true
+		  
+		  7. 测试：
+			  public class TestMain {
+					// -javaagent:path 
+					public static void main(String[] args) throws InterruptedException {
+						TargetTimed time = new TargetTimed();
+						time.hello();
+						time.helloSleep();
+						System.out.println(time.helloStr());
+					}
+				}
+			
+			 测试结果，打印所有方法的执行时间
+		
+		   
+	
