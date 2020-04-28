@@ -63,14 +63,24 @@
      4. 消息中间件集群崩溃，如何保证百万成产数据不会丢失
 	 订单服务（生产者） ----->  MQ  <--------仓储服务 （消费者）
 	 如果MQ集群宕机，数据就会丢失，这时我们需要使用消息的持久化机制----durable
-	   1) mp重启，就会失去我们之前创建的queue,所以首先先让queue持久化
-	     channel.queueDeclare("queueName",true,false,false,null);   //第二个参数是创建queue的durable，也就是支持持久化
-		 此时MQ重启时，可以恢复queue的信息，但是queue的message数据时没办法恢复的
-		 
-		2) 在生产者发送消息到mq时，需要定义这条消息也是durable
-		channel.basicPublish("","queue_name",MessageProperties.PERSISTENT_TEXT_PLAIN,message.getBytes());
-		注意：RabbitMq的消息持久化，是不承诺100%的消息不丢失的，可能因为mq接收到消息，但是还没来及持久化到磁盘，
-		他自己就宕机了，这时候消息还是会丢失的。
+	  1）exchange持久化
+		       如果exchange不设置持久化，那么服务器宕机重启之后，exchange将不复存在，生产者就无法正常的发送消息，所以需要
+			   对exchange进行持久化。
+			   channel.exchangeDeclare("exchangeName","direct/topic/header/fanout",true);
+			   第三个参数true就是将exchange进行持久化。
+		  
+	   2）queue持久化
+	      mq重启，就会丢失之前创建的queue，所以我们首先让queue持久化
+		  channel.queueDeclare("queueName",true,false,false,null)
+		  第二个参数是出啊关键queue的durable，也就是支持持久化，此时MQ重启时，可以恢复queue的信息，但是
+		  queue的message数据是没办法恢复的。
+
+	   3）message持久化
+		在生产者发送消息到mq时，需要定义这条消息的也是durable
+			channel.basicPublish("","queue_name",MessageProperties.PERSISTENT_TEXT_PLAIN,message.getBytes());
+			注意：rabbitmq的消息持久化，是不承诺100%的消息不丢失，可能因为mq接收到消息，但是还没来及持久化到磁盘
+			它自己就宕机了，这时候消息还是会丢失的。
+
 		
 	
 	5.  unack消息积压问题，以及prefetch count参数设置
