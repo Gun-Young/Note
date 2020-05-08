@@ -1,0 +1,68 @@
+AQS 
+
+参考地址：https://mp.weixin.qq.com/s/PAn5oTlvVmjMepmCRdBnkQ
+
+1. 全称 : AbstractQueuedSynchronizer 抽象队列同步器
+
+2. java并发包下很多API都是基于AQS来实现的加锁和释放锁的功能，AQS是java并发包的基础类。
+    ReentrantLock,ReentrantReadWriteLock底层都是基于AQS来实现的。
+	
+3. ReentrantLock内部包含了一个AQS对象，也就是AbstractQueuedSynchronizer类型的对象。这个AQS对象就是
+    ReentrantLock可以实现加锁和释放锁的关键性的核心组件
+	
+   伪代码
+    public class ReentrantLock {
+	    //内部有一个AbstractQueuedSynchronizer对象
+	    AbstractQueuedSynchronizer aqs = new AbstractQueuedSynchronizer();
+	}
+	
+	public class AbstractQueuedSynchronizer{
+		      int state = 0;      ----  加锁状态
+			  加锁线程 = null;       ----- 加锁的线程
+			  queue            -------  加锁失败的线程队列
+	}
+
+
+
+4. 核心变量
+    *** state：int类型，代表了加锁的状态。初始状态下，这个state的值是0。
+	*** 加锁线程： 记录当前加锁的是哪个线程，初始状态下，这个变量是null
+	*** 等待队列： 将加锁失败的线程放到等待队列
+	
+	
+5. 底层原理
+   a. 线程1跑过来调用ReentrantLock的lock()方法尝试进行加锁，这个加锁的过程，直接就是用CAS操作将state值从0变为1
+	 b. 如果之前没有其他线程加过锁，那么state的值肯定是0，此时线程1就可以加锁成功
+	      (ReentrantLock这种就只是一个外层的API，内核中锁机制实现都是依赖AQS组件的)
+	 c. ReentrantLock是可重入锁，就是一个线程可以对一个ReentrantLock对象多次执行lock()加锁和
+	     unlock()释放锁，也就是可以对一个锁加多次。
+	 d.每次线程1可重入加锁一次，会判断一下当前加锁线程就是自己，那么它自己就可以重入多次加锁，每次加锁就是把state的值累加1。
+     e. 线程2来尝试加锁，发现state的值不是1,所以CAS操作将state从0变1的过程就会失败，因为state的当前值为1，说明已经有线程加锁了
+	 f. 接着线程2会看是不是自己之前加的锁，发现加锁线程是线程1，所以线程2此时就加锁失败
+	 g.加锁失败后，线程2会将自己放到AQS的等待队列，因为自己尝试加锁失败了，此时就要将自己放到队列中来等待，等待线程1释放之后，
+	     自己就可以重新尝试加锁了。
+	 h. 在线程1执行完自己的业务逻辑代码后，就会释放锁，它释放的过程非常简单，就是将AQS内的state变量的值递减，如果state值为0，
+	     则彻底释放锁，会将加锁线程变量也设置为null
+	 j. 线程1释放完锁之后，会从等待队列的队头唤醒线程2重新尝试加锁。还是用CAS操作将state从0变为1，此时就会成功，成功之后代表
+	    加锁成功，就会将state设置为1，此外，还要把“加锁线程”设置为线程2自己，同时线程2自己就从等待队列中出队了。
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
