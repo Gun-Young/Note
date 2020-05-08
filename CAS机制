@@ -1,0 +1,109 @@
+CAS机制：
+
+参考文章：https://mp.weixin.qq.com/s/KFsqsCVgyiiTDXMR-Hu1-Q
+
+
+1.多个线程对同一个变量进行修改
+
+	public class HelloWorld{
+		private int data = 0;
+		 
+		 //多个线程同时对data变量执行操作，data++
+		 public int add(){
+			 return data++;
+		 }
+	}
+	
+	
+	
+2. 初步解决方案： synchronized
+   在add方法上加同步锁，
+    public class HelloWorld{
+		private int data = 0;
+		 
+		 //多个线程同时对data变量执行操作，data++
+		 public synchronized int add(){
+			 return data++;
+		 }
+	}
+	
+	虽然随着java版本更新，对synchronized做了很多优化，但是处理这种简单的累加操作，
+	仍然显着太重了。synchronized是可以解决更加复杂的并发编程场景和问题的。
+	
+	
+	
+	
+	
+3. 更加高效的解决办法
+	  Java并发包下提供了一系列的Atomic原子类，比如AtomicInteger
+	  
+	 public class HelloWorld{
+		private AtomicInteger data = new AtomicInteger(0) ;
+		 
+		 //多个线程同时对data变量执行操作，data.incrementAndGet
+		 public synchronized int add(){
+			 return  data.incrementAndGet();
+		 }
+	}
+	
+	实际上，Atomic原子类底层用的不是传统意义的锁机制，而是无锁化的CAS机制，通过CAS机制保证多线程修改一个
+	数值的安全性。
+	
+	CAS = Compare and Set (先比较再设置)
+	
+	首先每个线程都会先获取当前的值，接着走一个原子的CAS操作，原子的意思这个CAS操作一定是自己完整执行完的，不会被别人打断。
+	如果有线程在执行CAS的时候，发现自己之前获取的值跟当前的值不一样，会导致CAS失败，失败之后，进入一个无限循环，再次获取值，
+	接着执行CAS操作。
+	
+	
+	
+	
+	
+4.执行过程
+   ***  首先线程1，对AtomicInteger执行incrementAndGet()操作，它底层会先获取AtomicInteger当前的值，这个值就是0
+   ***  直接执行CAS操作，它会比较获取的值和当前值，如果一致，说明没有其他线程修改过，直接累加1，于是AtomicInteger的值变为1
+   ***  线程2和线程3同时执行，因为底层不是基于锁机制，都是无锁化的CAS机制，所以这两个线程可能会并发执行incrementAndGet()操作 
+   *** 然后两个线程都获取到了当前AtomicInteger的值，就是1
+   *** 接着线程2抢先一步发起了原子的CAS操作！ 注意，CAS是原子的，此时就它一个线程执行
+   *** 然后线程2就会比较获取的值和当前值，如果一致，说明没有其他线程修改过，直接累加1，于是AtomicInteger的值变为2
+   *** 此时AtomicInteger的值变为了2。现在线程3接着发起了CAS操作，线程3还是拿着之前获取到的那个1，与当前值2不一致，
+         然后再重新获取一边值，于是获取到了最新的值2，再接着发起CAS操作，比较获取的值与最新值，都一直的情况下，将值累加1，
+		 此时AtomicInteger的值变为了3.
+
+  上述整个过程，就是所谓Atomic原子类的原理，没有基于加锁机制的串行化，而是基于CAS机制，先获取一个值，然后发起CAS,比较这个值有没有
+   被改过，如果没有，就更改值！这个CAS是原子的，不会被别的线程打断。
+   通过这个机制，不需要加锁这么重量级的机制，也可以用轻量级的方式实现多个线程安全的并发的修改某个数值。
+   
+   
+	
+
+5.问题
+   *** cpu开销大：在大量的线程同时并发修改一个AtomicInteger，可能会有很多线程不停的自旋，进入一个无限重复的循环中。
+   *** 不能保证代码块的原子性： cas机制所保证的只是一个变量的原子性操作，而不能保证整个代码块的原子性。
+   
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
