@@ -1,0 +1,31 @@
+一.FeignClient注解及参数
+  @FeignClient常用的属性如下：
+  1. name: 指定FeignClient的名称，如果项目使用了Ribbon，name属性会作为微服务的名称，用于服务发现
+  2. url: url一般用于调试，可以手动指定FeignClient调用的地址
+  3. decode404:当发生404错误时，如果该字段为true,会调用decoder进行解码，否则抛出FeignException
+  4. configuration: Feign配置类，可以自定义Feign的Encoder,Decoder,LogLevel,Contract
+  5. fallback: 定义容错的处理类，当调用远程接口失败或超时时，会调用对应接口的容错逻辑，fallback指定的类必须实现@FeignClient标记的接口
+  6. fallbackFactory: 工厂类，用于生成fallback类示例，通过这个属性我们可以实现每个接口通用的容错逻辑，减少重复的代码
+  7. path: 定义当前FeignClient的统一前缀  
+
+
+二. Feign请求超时问题
+    Hystrix默认的超时时间是1秒，如果超时这个时间没有响应，将会进入fallback代码，而首次请求往往会比较慢（spring的懒加载，要实例化一些类），
+	这个响应时间可能就大于1秒了。
+	
+	解决方案：
+	方法一
+	hystrix.command.default.execution.isolation.thread.timeoutInMilliseconds: 5000
+	该配置是让Hystrix的超时时间改为5秒
+	方法二
+	hystrix.command.default.execution.timeout.enabled: false
+	该配置，用于禁用Hystrix的超时时间
+	方法三
+	feign.hystrix.enabled: false
+	该配置，用于索性禁用feign的hystrix。该做法除非一些特殊场景，不推荐使用。
+    
+	
+	
+	
+
+
