@@ -1,0 +1,16 @@
+windows 常用命令
+
+1. 查看端口占用情况
+netstat -ano | findstr "8080"
+
+
+
+2. 查看进程
+tasklist | findstr "进程号"
+
+
+
+3.结束进程
+taskkill /F /pid 进程号
+
+
