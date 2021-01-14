@@ -1,0 +1,32 @@
+
+jvisualVM远程监控linux服务器操作步骤：
+
+
+1. 启动jar添加命令：
+ java 
+ -Djava.rmi.server.hostname=192.168.129.129   //服务器地址
+ -Dcom.sun.management.jmxremote 
+ -Dcom.sun.management.jmxremote.port=1099     //监控工具连接端口
+ -Dcom.sun.management.jmxremote.authenticate=false 
+ -Dcom.sun.management.jmxremote.ssl=false 
+ -jar test.jar
+
+
+ 
+
+2.启动本地的jvisualVM
+  2.1 点击远程，添加远程主机
+  2.2 在主机右键 添加JMX连接 
+  2.3 可以看到远程主机上的内存情况 
+
+
+
+
+
+
+
+
+
+
+
+
