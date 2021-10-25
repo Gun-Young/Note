@@ -1,0 +1,489 @@
+
+explian执行计划
+
+一. id
+sql的执行顺序标识，sql从大到小执行
+1. id相同时，执行顺序由上至下
+2. 如果是子查询，id的序号会递增，id值越大优先级越高，越先被执行
+3. id如果相同，可以认为是一组，从上往下顺序执行，在所有组中，id值越大，优先级越高，越先执行
+
+
+
+二. select_type 
+ 展示查询中每个select子句的类型
+
+(1) SIMPLE(简单SELECT,不使用UNION或子查询等)
+
+(2) PRIMARY(查询中若包含任何复杂的子部分,最外层的select被标记为PRIMARY)
+
+(3) UNION(UNION中的第二个或后面的SELECT语句)
+
+(4) DEPENDENT UNION(UNION中的第二个或后面的SELECT语句，取决于外面的查询)
+
+(5) UNION RESULT(UNION的结果)
+
+(6) SUBQUERY(子查询中的第一个SELECT)
+
+(7) DEPENDENT SUBQUERY(子查询中的第一个SELECT，取决于外面的查询)
+
+(8) DERIVED(派生表的SELECT, FROM子句的子查询)
+
+(9) UNCACHEABLE SUBQUERY(一个子查询的结果不能被缓存，必须重新评估外链接的第一行)
+ 
+
+
+
+三. table 
+显示这一行的数据是关于哪张表的，有时不是真实的表名字，看到的<derived3>表示，第几步执行后的临时表
+
+
+
+
+
+
+四. type 
+表示Mysql在表中找到所需行的方式，又称为“访问类型”，说明查询中使用到的索引类型
+常用的类型：  ALL, index,  range, ref, eq_ref, const, system, NULL（从左到右，性能从差到好）
+
+
+ALL：Full Table Scan， MySQL将遍历全表以找到匹配的行
+
+index: Full Index Scan，index与ALL区别为index类型只遍历索引树
+
+range:只检索给定范围的行，使用一个索引来选择行 （至少达到这一级别）
+
+ref: 表示上述表的连接匹配条件，即哪些列或常量被用于查找索引列上的值  （最好达到这一级别）
+
+eq_ref: 类似ref，区别就在使用的索引是唯一索引，对于每个索引键值，表中只有一条记录匹配，简单来说，就是多表连接中使用primary key或者 unique key作为关联条件
+
+const、system: 当MySQL对查询某部分进行优化，并转换为一个常量时，使用这些类型访问。如将主键置于where列表中，MySQL就能将该查询转换为一个常量,system是const类型的特例，当查询的表只有一行的情况下，使用system
+
+NULL: MySQL在优化过程中分解语句，执行时甚至不用访问表或索引，例如从一个索引列里选取最小值可以通过单独索引查找完成。
+
+
+
+
+
+
+
+五. possible_keys
+指出mysql能使用哪个索引在表中找到记录，查询涉及到的字段上若存在索引，则该索引将被列出，但不一定查询使用
+
+该列完全独立于Explain输出所示的表的次序，这意味着possible_keys中某些键实际上不能按生成的表次序使用
+如果该列是NULL.则没有相关的索引，在这种情况下，可以通过检查WHERE子句看是否它引用某些列或适合索引的列来提高你的查询性能。如果这样，创造一个
+适当的索引并且再次用Expliain检查查询。
+
+
+
+
+
+六. key
+key列显示MYSQL实际决定使用键（索引）
+如果没有选择索引，键是NULL，要想强制Mysql使用或忽略possible_keys列中的索引，在查询中使用Force index,user index,或者IGNORE INDEX
+
+
+
+
+
+七. key_len: 
+ 表示索引中使用的字节数，可通过该列计算查询中的索引的长度
+
+
+
+八. ref 
+表示上述表的连接匹配条件，即哪些列或常量被用于查找索引列上的值。
+
+
+
+
+九. rows 
+表示MYSQL根据表统计信息及索引选用情况，估算的找到所需的记录所需要读取的行数
+
+
+
+十. Extra
+
+该列包含Mysql解决查询的详细信息：
+1. using where: 列数据是从仅仅使用了索引中的信息而没有读取
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------------
+mysql性能优化：
+
+一：通过系统参数查看mysql的性能指标
+    在进行sql优化时，需要调整许多的mysql参数（如缓存大小，并发连接数）
+	通过下面的两个命令查看系统参数配置：
+	(1) show status
+	(2) show variables
+
+    show status实际包含了global,session两种作用域的状态，并且默认的session状态。
+	如果想观察global作用域，就可以使用show global status，show status查询的是当前的
+	连接的各项指标，可以使用flush status重置，show global status查询的是mysql服务从开启到
+	现在各项指标
+
+
+
+二、mysql存储引擎结构与MyISAM性能优化 
+    在优化sql时，首先要知道sql语句的执行顺序，平时编写sql语句时，关键字的先后顺序如下：
+	select distinct ... from ... join ... on ... where ... group by ... having ... order by ... limit ...
+	单数据库引擎在真正解析时，是按以下顺序执行的：
+	from ... on ... join ... where ... group by ... having ... select distinct ... order by ... limit ...
+   
+
+    1. mysql逻辑分层  
+	  （1）连接层： 提供与客户端的连接服务
+	  （2）服务层： --- 提供各种用户使用的接口（select 等）
+                    --- 提供sql优化器
+      （3）引擎层： 提供了各种数据存储方式 （InnoDB,MyISAM）
+	  （4）存储层： 存储数据
+	             
+       服务层中内置了一个sql优化器，会在某些情况下对编写的sql语句自动进行一些优化。因此，我们以后可能会遇到"明明自己设置了一套优化方案，
+	   但实际却没有按照自己的预期执行"的情况。此外，InnoDB,MyISAM是mysql常用的两种存储引擎，二者的主要区别在于InnoDB(默认)是以"事务优先"
+	   设计的，使用的是行锁，更加适合于高并发场景；MyISAM是以"性能优先"设计的，使用的是表锁，不适合高并发场景。
+
+
+
+
+
+三.索引的数据结构
+   索引（index）相当于书的目录，是可以让数据库高效查询数据的数据结构。索引的数据结构一般是”树“，如B树，R-树，Hash树
+   1.但是索引也存在一定的弊端：
+     a) 创建的索引，需要额外占用一定存储空间
+     b) 索引会降低写操作的效率，因为每次写操作时除了要写入数据本身外，还要写入索引表中，但一般而言，使用频率最高，最 
+         影响性能的是读操作，因此，总的来说，使用索引是利大于弊。
+   2. 索引分类
+     a) 主键索引：不能重复，并且索引列的值不能是null,此外，如果某个字段是主键，则该字段默认就是创建一个主键索引。
+     b) 唯一索引：不能重复，但索引列的值可以是null
+     c) 单值索引：单字段（age）,一个表可以多个单值索引
+     d) 复合索引：多个字段构成的索引，相当于二级目录。例如，可以由（name,age）共同组成一个复合索引，表示先根据name
+         查找，如果name相同再根据age查询。	 
+     
+	注意： 
+	  *** 联合索引和单索引的区别：
+	      如果我们创建了(area,age,salary)的复合索引，那么其实相当于创建了（area,age,salary）,(area,age),(area)三个索引，
+		  这被称为最佳左前缀特性。因此我们创建复合索引时应该将最常用作限制条件的放在最左边，依次递减。
+		  
+		  select * from test where area='11'
+		  select * from test where area = '11' and age = 1
+		  select * from test where area = '11' and age = 1 and salary = 2.0
+		  以上使用索引，如果在查询中需要匹配多个字段的条件，可以把这几个字段做个联合索引，效率要比每个字段上加索引高得多
+		  
+
+          select * from test where age='11'
+          select * from test where age = 1 and salary = 2.0
+		  以上没有使用索引
+		  
+四. sql的执行计划 
+    在分析sql语句时，可以使用explain查询sql执行计划，模拟sql引擎的执行逻辑
+   
+    sql执行计划的十大参数:
+	a) id：编号
+	   SQL引擎约定：当id值相同时，table按照从上往下顺序执行，id值不同时，id值越大，查询的优先级越高。
+	
+    b) select_type 
+	   *** SIMPLE: 简单查询，不包含子查询，UNION查询 
+	   *** PRIMARY: 主查询，即包含子查询SQL中的最外层SELECT语句
+	   *** SUBQUERY: 子查询，即包含查询sql中的内层select语句（非最外层）
+	   *** DERIVED： 衍生查询，使用到了临时表的查询 
+	   *** UNION: 联合查询，使用到了UNION的查询
+	   *** UNION RESULT: 告知SQL编写者，哪些表之间存在UNION查询
+
+
+    d) type 
+	   表示使用的索引类型，需要注意，对type进行优化的前提是表中存在索引。
+	   索引类型的性能由高到低依次：system > const > eq_ref > ref > fulltext > ref_or_null > index_merge > unique_subquery >
+	   index_subquery > range > index > all,达到各个索引级别的条件如下：
+	   *** system:只有一条数据的系统表，或衍生表只有一条数据的主查询
+	   *** const: 仅能查到一条数据的查询语句，适用于Primary key或unique索引 
+	   *** eq_ref: 唯一性索引，对于每个索引键的查询，只返回唯一一条索引（即每个索引值有且只有1条查询结果，不能多条，也不能0条），
+	       常见于Primary key 或unique索引
+       *** ref: 非唯一性索引。对于每个索引键的查询，返回不唯一的数据（0条或多条）    
+       *** range: 表示在某个范围内使用到了索引，通常见于where后面是范围查询的情况，如between,>,<>,>=,<=等。需要注意，由于sql优化器
+	       会自动优化进而可能造成干扰，因此在使用in等关键字进行范围查询是，索引有时候会失效，从而转为无索引的情况
+	   *** index：全索引扫描，会查询全部的索引（会查询整个索引表，但不会查询表中的所有数据）
+       *** all: 全表扫描，会查询全部表中的数据
+
+       区分system/const/eq_ref/ref
+	   system/const:查询结果只有一条数据
+	   eq_ref:查询结果由多条数据，但是每个索引值对应的数据是唯一的
+	   ref：查询结果有多条数据，每个索引值对应的数据是0或多条
+	   
+	   ------> 在实际开发中，我们只要能达到ref或range级别就已经不错了
+   
+
+
+    e) possible_keys和key
+	   possible_keys是sql引擎预测可能会用到的索引，但仅仅是一种预测，并不一定准确，key表示实际查询使用到的索引
+
+
+    f) key_len： 索引的长度，可用于了解索引的定义情况，以及判断复合索引是否被完全使用
+	
+	g) ref: 用于指明当前表所参照的字段。需要注意的是： type字段中也有一个ref选项，与此处的ref同名。
+	
+	h) rows：实际执行时，通过索引查询到的数据条数
+
+    
+	j) extra: 
+	    *** using filesort: 需要”额外“执行一次排序（查询），如果出现此值就代表性能消耗大，”额外“是指排序时所进行的查询，
+           例如，对于”select ... from table order by column“这种sql语句来说，select本身需要一次查询，而如果在”order by“
+           排序时再进行一次查询，那么”order by“所进行的查询就称为”额外“的查询		   
+	       （1）单索引情况： 
+                sql引擎约定：对于单索引，如果排序和查找是同一个字段，则不会出现using filesort,如果排序和查找的不是同一个字段，
+                则会出现using filesort.
+                
+                示例：a1,a2都添加了索引 
+                -- 不会出现 useing filesort 
+                select * from test where a1 = '' order by a1；
+                -- 会出现useing filesort
+                select * from test where a1 = '' order by a2;
+
+
+           （2）复合索引情况 
+                a1,a2,a3组成的复合索引  index_a1_a2_a3
+				-- where a1 后直接跨列使用了a3,会出现using filesort
+				select * from test where a1 = '' order by a3; 
+				-- where a2跨过了a1,会出现using filesort
+				select * from test where a2 = '' order by a3;
+				-- where a1后，按顺序使用了a2,不会出现using filesort
+				select * from test where a1 = '' order by a2;
+				
+                避免using filesort的第二种方法，是使用复合索引时，where和order by要按照复合索引的顺序使用
+				（如先where a1，再order by a2）,不要跨列或无序使用
+				如果存在复合索引，就尽量使用复合索引中的全部字段。
+	
+		
+        *** using temporary: 查询时用到了临时表，如果出现此值也代表性能消耗较大，常见于group by 语句中。
+		    -- where后面的是a1,group by也是a1,也不会出现user temporary
+			   select a1 from test where a1 in ('1','2','3') group by a1;
+               select a2 from test where a1 in ('1','2','3') group by a1;
+            -- where后面是a1,group by的却是a2,会出现using temporary
+			   select a1 from test where a1 in ('1','2','3') group by a2;
+			   select a2 from test where a1 in ('1','2','3') group by a2;
+
+               避免出现using temporary的方式：where筛选哪些列，就根据那些列group by。
+			   如果要提高order by和group by的速度，还需要调整sort_buffer_size参数。sort_buffer_size是每个
+			   排序线程分配的缓冲区的大小，决定了order by或group by的速度。
+			   
+			   
+			   避免出现using temporary的方法就是group by的排序字段要保证被包含在where语句中，就因为SQL在
+			   执行中，先执行where后执行group by,假设在执行where时，没有x字段，而x字段却在group by中
+			   出现了，那么就需要在执行group by时重新再创建一张临时表用来处理X字段
+			   
+ 
+        *** using index：SQL在实际执行时，使用到了”覆盖索引“，如果出现此值就代表会提升查询的性能。覆盖索引是
+		    指通过索引查询的字段，包含了要查询的所有字段。换句话说就是，where后面的字段，包含了全部select后的字段。
+			使用了覆盖索引的查询，可以让查询操作直接从索引文件中获取数据，而不需要回原表查询。
+			-- 已存在复合索引（a1,a2,a3）,查询a1,a2全部在复合索引中，会出现using index
+			    select a1,a2 from test where a1 = '' or a2 = '';
+            -- 只存在复合索引（a1,a2）,不能覆盖要查询的a1,a3, 不会出现using index 
+			   select a1,a3 from test where a1 = '' or a3 = '';
+
+        *** using where: 如果中出现了using where,就表示sql引擎执行查询时，需要回表查询（即无法只从索引字段中获取要
+		      查询的数据，必须回到原表中查询）
+              例如：假设age是索引列，但查询语句是select age,name,from ... where age = ...,此SQL语句中必须回原表才能
+			  查询到name数据，因此会显示using where.
+            -- a1,a2是索引列，查询a3时需要回原表
+			   select a1,a3 from test where a3 = '';
+        *** impossible where: 
+		    -- 当where永远为false时，Extra就会出现impossile where 
+		    select * from test where a1 = 'x' and a1 = 'y'
+
+
+
+        使用索引时的建议：
+		(1) 如果(a,b,c,d)复合索引，并且和使用的顺序全部一致(且不跨列使用),则复合索引全部被使用。如果部分一致(且不跨列使用)，
+		    则部分索引会被使用。如select a,c where a='' and b='' and d='',其中where后面的a和b和复合索引中的顺序一致，因此 
+			实际只会使用到a和b两个索引（where后的d存在跨列情况）
+		(2) where和order by连续起来使用，不要跨列使用
+
+
+
+
+
+        ***** 关联查询 *****************
+		对于两张表关联查询的情况，一般建议，给两张表的关联字段都加上索引。特殊情况下，如果要求左连接只能给一张表加索引，那么建议
+		优先在右表的关联字段上加索引。
+		
+		此外，还需要遵循的原则是小表驱动大表，假设小表有10条数据，大表中有300条。
+		（1）select ... where 小表.x = 大表.x
+		（2）select ... where 大表.x = 小表.x
+		在sql引擎执行时，（1）的执行效率较高，因此，假设此时t表的数量小，x表的数据量大，最好将连接条件写成 on t.id=c.id,也就是将
+		数据量最小的表放做左边
+
+
+
+
+五. 索引失效常见场景：
+    
+    1.不要在索引字段上进行操作（计算，使用函数，显示/隐式类型转换等），否则会导致索引失效 
+       
+	   示例1：
+	   假设有索引：book 表有idx_atb(authorid,typeid,bid)
+	   -- 使用到了authorid，typeid两个字段的索引
+	   explain select * from book where authorid=1 and typeid=2
+        
+       -- 对type字段进行了数值计算，type上的索引失效，实际只用到了authorid一个字段的索引
+	   explain select * from book where authorid=1 and typeid*2=2
+   
+       -- 所有的索引均进行了数值计算，因此索引全部失效
+	   explain select * from book where authorid*2=1 and typeid*2=2
+	   
+	   -- 用到了0个索引，对于复合索引，如果其中某个索引失效，则该索引及右边索引全部失效
+	   explain select * from book where authorid*2=1 and typeid=2
+
+
+       示例2：
+	   teacher表有索引index_name(name)
+	   -- SQL执行时进行了类型转换(显示，字符转数字)，导致索引失效
+	   explain select * from teacher where name = CONVERT('123',SIGNED);
+	   
+	   -- SQL执行时进行了类型转换（隐式，字符转数字），导致索引失效 
+	   explain select * from teacher where name=123
+
+
+       注意：（1）复合索引使用以上情况，如果是单值索引，则不受上述条件限制
+             （2）多个单值索引之间彼此独立，某个单值索引失效不会影响到其他单值索引。
+
+    
+	2. 不能对复合索引使用大于，不等于(!=,<>)或is null,is not null,否则可能导致自身及右侧索引全部失效
+
+       示例： book表存在复合索引index_atb(authorid,typeid,bid)
+	   -- 复合索引中如果存在>,则自身和右侧的索引全部失效
+	   explain select * from book where authorid > 1 and typeid = 2;
+	   
+	   -- 复合索引中如果存在!=，则自身和右侧索引全部失效
+       explain select * from book where authorid !=1 and typeid = 2;
+	   
+	   -- 复合索引中的authorid和typeid均有效
+	   explain select * from book where authorid = 1 and typeid = 2;
+
+       注意：由于sql引擎有时会自动对sql进行调整，因此优化后的sql有时候可能会不符合我们的预期
+
+    
+	3. like 查询不要以“%”开头，否则会导致索引失效 
+	   
+	   示例：teacher 表存在索引 index_name(name)
+	   --  like 以'%'开头，name索引失效 
+	   explain select * from teacher where name like '%x%'
+      
+	   -- like以常量开头，name索引正常使用
+	   explain select * from teacher where name like 'x%'
+	   
+	   -- like以’%‘开头，name索引失效，但如果用到了覆盖索引，则有可能使sql引擎重新识别索引
+	   explain select name from teacher where name like '%x%'
+
+       注意：如果因为业务需求，不可避免的使用了索引失效的语句(如 select .... from ... where name like '%yp%' ),
+	   那么可以尝试使用覆盖索引使SQL引擎重新识别该索引；即使尝试失败，也会因为用到了Using index而提高一部分性能，
+	   在编写sql时，尽量不要写“select * ...”,否则无法实现覆盖索引。
+
+
+
+
+    4.where后面不要使用or，否则会导致索引失效
+	  
+	  示例：teacher表存在索引index_name(name)
+	  explain select * from teacher where name = '' or id > 1
+      
+
+
+
+
+
+
+六. 锁机制 
+
+    innoDB与MyISAM的最大不同有两点:一是支持事务，二是采用了行级锁。
+	表锁：不会出现死锁，发生锁冲突几率高，并发低
+	行锁：会出现死锁，发生锁冲突几率低，并发高
+    
+
+
+   
+   根据操作类型的不同，锁可以分为读锁和写锁
+   （1）读锁：共享锁，对同一个数据，多个读操作可以同事进行，互不干扰 
+   （2）写锁：互斥锁，如果当前写操作没有执行完毕，则其他进行无法同时进行读操纵，写操作
+  
+  
+   根据操作范围的不同，锁也可以分为表锁，行锁，和页锁 
+   （1）表锁：一次性对一张表整体加锁。MyISAM存储引擎默认使用表锁，优点是开销小，加锁快，无死锁；
+        但锁的粒度较大，容易发生锁冲突，并发度低（容易发生脏读，幻读，不可重复读，丢失更新等并发问题）。
+		表锁在使用的时候，会在执行查询语句select前，自动给表中的所有数据加读锁，在执行更新操作前，自动给
+		表中的所有数据加写锁。因此对MyISAM表进行操作，会有以下情况：
+		a):对MyISAM表的读操作（加读锁），不会阻塞其他进程（会话）对同一表的读请求，但会阻塞对同一表的写请求，
+		   只有当读释放后，才会执行其他进程的写操作。
+		b):对MyISAM表的写操作（加写锁），会阻塞其他进程（会话）对同一表的读和写操作，只有当写锁释放后，才会
+		   执行其他进程的读写操作。
+
+        在分析锁表时，可以使用 show open tables查看哪些表被加了锁，或者使用show status like 'table%'分析表被锁定的
+		严重程度。（待了解）
+		
+		出现死锁的原因？？？？？
+		
+   （2） 行锁： 一次性对一条数据加锁。InnoDB 存储引擎默认使用行锁，行锁的开销大，加锁慢，并且容易出现死锁；但
+         行锁的粒度较小，不易发生锁冲突，并发度高。
+		   
+		 对于行锁，需要注意的是：如果某个进程A对一条数据a正在进行DML操作，则其他进程必须等待进程A结束事务后，
+         才能对A进行操作；也就是说，行锁会在事务结束后自动解锁。但是如果是表锁，既可以在事务结束后自动解锁，
+         又可以通过unlock table手动解锁。
+
+         对于采用行锁的存储引擎，实际加锁的范围就是where后面的范围，与实际值无关。		 
+     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
