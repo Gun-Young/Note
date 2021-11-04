@@ -51,6 +51,30 @@ https://blog.csdn.net/east123321/article/details/82385816
 
 
 
+3.参数用法说明
+ribbon:
+  ReadTimeout: 3000  #指建立连接后从服务端读取到可用资源所有时间
+  ConnectTimeout: 3000  #指建立连接所用的时间，适用于网络状况正常的情况下，两端连接所需要的时间
+  OkToRetryOnAllOperations: false  #是否所有操作都重试
+  MaxAutoRetries: 2  #同一台实例最大重试次数,不包括首次调用
+  MaxAutoRetriesNextServer: 3 #更换实例的次数
+  
+  
+  
+**** MaxAutoRetries，MaxAutoRetriesNextServer说明：
+假设B服务调用A服务（A1:8080 A2:8088）,在A服务接口Thread.sleep(5000),也就是A服务的接口永远超时，那么重试的情况是这样的：
+1. 假设刚进来是A1，由于超时开始重试，因为MaxAutoRetries=2,所以次数对A1追加两次重试，重试情况 A1 A1 A1
+2. 由于一直超时所以切换请求A2（切换实例第一轮）,然后因为MaxAutoRetries=2,所以继续对A2追加重试两次，重试情况：A1 A1 A1 A2 A2 A2
+3. 由于一直超时所有切换请求A1（切换实例第二轮），然后还是因为MaxAutoRetries=2，所以继续对A1追加两次重试，重试情况：A1 A1 A1 A2 A2 A2 A1 A1 A1
+4. 由于一直超时所以切换请求A2（切换实例第三轮），然后还是因为MaxAutoRetries=2，所以继续对A2追加两次重试，重试情况：A1 A1 A1 A2 A2 A2 A1 A1 A1 A2 A2 A2
+
+  
+**** OkToRetryOnAllOperations说明：
+   OkToRetryOnAllOperations默认值是false。如果设置为false时，只会对get请求进行重试，如果设置为true,便会对所有请求进行重试，
+   如果put或post等写操作，如果服务器接口没有做幂等性，会产生不好的结果。
+
+
+
 
 
 
