@@ -1,5 +1,5 @@
 参考文章：https://www.imooc.com/article/76515
-
+官当配置wiki地址： https://github.com/Netflix/Hystrix/wiki/Configuration
 
 一 springboot 集成 Hystrix
   1.添加依赖： 
