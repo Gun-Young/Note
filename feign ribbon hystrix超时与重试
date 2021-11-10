@@ -81,6 +81,120 @@ ribbon:
 
 
 
+------------------------------------------------------------------------------------------------------------------------
+Hystrix工作流程:
+1.每次调用创建一个新的HystrixCommand,把依赖调用封装在run()方法中
+2.执行execute()/queue做同步或者异步调用
+3.判断熔断器(circuite-breaker)是否打开，如果打开则跳到第8步骤，进行降级策略
+4.判断线程池/队列/信号量是否跑满，如果跑满进入降级步骤8，否则继续后续步骤
+5.调用HystrixCommand的run方法，运行依赖逻辑，如果依赖逻辑调用超时，进入步骤8
+6.判断逻辑是否调用成功，返回成功调用结果，否则调用出错，进入步骤8 
+7.计算熔断状态，所有的运行状态（成功，失败，拒绝，超时）上报给熔断器，用于统计从而判断熔断器的状态
+8.getFallBack()降级
+   下面四种情况：将出发getFallback调用
+    (1)run方法抛出非HystrixBadRequestException异常
+    (2)run方法调用超时
+    (3)熔断器开启拦截调用
+    (4)线程池/队列/信号量是否跑满	
+    
+   降级后处理：
+   (1) 没有实现getFallback的command将直接抛出异常
+   (2) fallback降级逻辑调用成功直接返回
+   (3) 降级逻辑调用失败抛出异常
+9.返回执行成功结果   
+
+
+
+
+
+
+熔断器的状态
+close: 熔断器处于关闭状态，调用失败次数类型，到了阈值（一定比例），则启动熔断
+open：熔断器打开状态，此时对下游的调用都内部直接返回错误，不走网络，但设计了一个时钟选项
+half-open: 半熔断的状态，允许定量的服务请求，如果都成功（或一定比），则认为恢复了，关闭熔断器，
+      否则认为还没有好，又回到熔断open状态
+
+
+
+
+
+服务健康状况=请求失败数/请求总数
+熔断器开关由关闭到打开的状态转换是通过当前服务简况状况和设定阈值比较决定的
+1.当熔断器开关关闭时，请求被允许通过熔断器，如果当前健康状况高于设定阈值，开关继续保持关闭 
+2.当前熔断器开关打开时，请求被禁止通行
+3.当熔断器开关处于打开状态，经一段时间后，熔断器会自动进入半开状态，这时熔断器只允许一个请求通过，
+  当该请求调用成功时，熔断器恢复到关闭状态，若请求失败，熔断器继续保持打开状态，接下来的请求被禁止通过。
+
+
+
+
+
+
+
+-------------------------------------------------相关配置------------------------
+#feign
+#启用hystrix
+feign.hystrix.enabled=true
+#使用okhttp
+feign.okhttp.enabled=true
+feign.httpclient.enabled=false
+
+
+#ribbon
+#端点建立连接的超时时间
+ribbon.ConnectTimeout=5000
+#建立连接后，读取可用资源的超时时间
+ribbon.ReadTimeout=2000
+#同一台实例最大重试次数（不包括第一次）
+ribbon.MaxAutoRetries=1
+#重试负载均衡其他的实例最大重试次数（不包括第一次）
+ribbon.MaxAutoRetriesNextServer=0
+
+
+#hystrix
+hystrix.command.default.execution.isolation.thread.timeoutInMilliseconds=20000
+hystrix.command.default.execution.isolation.strategy=THREAD
+hystrix.command.default.execution.timeout.enabled=true
+hystrix.threadpool.default.maximumSize=5
+hystrix.threadpool.default.allowMaximumSizeToDivergeFromCoreSize=false
+hystrix.command.default.fallback.isolation.semaphore.maxConcurrentRequests=3
+
+
+
+
+
+--------------------------------代码示例----------------------------------
+
+    @HystrixCommand(fallbackMethod = "getNameFallback",
+
+            threadPoolProperties = {
+                    @HystrixProperty(name = "coreSize", value = "2"),
+                    @HystrixProperty(name = "maxQueueSize", value = "2")
+            },
+            commandProperties = {
+                   @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "10000"),
+                    @HystrixProperty(name = "execution.isolation.strategy", value = "THREAD")
+            }
+    )
+    @Override
+    public String getName() {
+        //设置当前线程的起始时间
+        ThreadTime time = new ThreadTime();
+        time.setStartTime(System.currentTimeMillis());
+        TimeThreadLocalUtil.set(time);
+        String flag = Thread.currentThread().getName();
+        System.out.println("当前线程id:" + flag);
+        return linghuChongFeign.getName(flag);
+    }
+
+
+    public String getNameFallback() {
+        Long endTime = System.currentTimeMillis();
+        System.out.println("耗时：" + (endTime - TimeThreadLocalUtil.get().getStartTime()));
+        TimeThreadLocalUtil.remove();
+        return "服务走神";
+    }
+
 
 
 
