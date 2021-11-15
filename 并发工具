@@ -90,3 +90,53 @@ public class CountDownLatchTest {
 }
 
 
+
+
+
+
+
+
+3.循环栅栏（cyclicBarrier）
+
+    @GetMapping("/testCyclicBarrier")
+    public void testCyclicBarrier() {
+        //场景：假如周末聚会，先到的人要等待还没有到达的人，要等到人全部到齐之后才能开始吃饭
+        //cyclicBarrier功能：它的功能是让一组线程达到一个屏障或者功能点时被阻塞，直到最后一个线程也达到屏障，才会打开屏障，所有被屏障拦截的线程才会继续运行
+        //cyclicBarrier：默认的构造方法CyclicBarrier(int parties),其参数表示屏障拦截的线程数量，每个线程调用await方法告诉CyclicBarrier线程已经到达了屏障，然后当前线程被阻塞
+
+        //官方解释：CyclicBarrier是一个同步辅助类，它允许一组线程相互等待，直到到达某个公共屏障点，在涉及一组固定大小的线程的程序中，这些线程必须相互等待，此时CyclicBarrier
+        //很有用，因为该barrier在释放等待线程后可以重复使用，所以称它为循环的barrier
+
+
+        //周末3人聚餐，需要等待3个人全部到齐才能开发
+        CyclicBarrier cb = new CyclicBarrier(3);
+        System.out.println("有" + (3 - cb.getNumberWaiting()) + "个人正在赶来餐厅");
+        for (int i = 0; i < 3; i++) {
+            final int person = i;
+            cachedPool.execute(() -> {
+                try {
+                    //模拟从家到目的地所花费的时间
+                    Thread.sleep((long) (Math.random() * 10000));
+                    System.out.println(Thread.currentThread().getName() + "---用户" + person + "即将达到餐厅," +
+                            "用户" + person + "到达餐厅了。" + "当前已有" + (cb.getNumberWaiting() + 1) + "个人到达餐厅");
+                    cb.await();
+                    System.out.println("三个人都到到餐厅啦，" + Thread.currentThread().getName() + "开始吃饭了");
+                    //todo 吃完饭后想去网吧开黑  这里具体代码我就不写啦  留给小伙伴自己实现 >.<
+                    //再次wait(),等待3个人全部到达网吧  cb是可以复用的！
+                    Thread.sleep((long) (Math.random() * 10000));
+                    cb.await();
+                    System.out.println("三个人都到网吧啦，" + Thread.currentThread().getName() + "开始打游戏");
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+    }
+
+
+
+
+
+
+
