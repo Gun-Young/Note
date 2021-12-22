@@ -211,6 +211,14 @@ public class RpcConsumer {
 }
 
 
+//服务端注册
+public class RpcProvider {
+    public static void main(String[] args) throws Exception {
+        HelloService service = new HelloServiceImpl();
+        RpcFramework.export(service, 5555);
+    }
+}
+
 
 注意知识点： 反射，动态代理，网络编程，ObjectInputStream,泛型 T
 
