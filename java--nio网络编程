@@ -1,0 +1,371 @@
+---------------------------------------------------------------消息边界------------------------------------------------------
+/**
+ * 分隔符解决消息边界问题，半包，粘包情况
+ */
+public class NioServer2 {
+
+    private static Logger logger = LoggerFactory.getLogger(NioServer2.class);
+
+    public static void main(String[] args) throws IOException {
+        //1. 创建服务端
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //绑定监听端口
+        serverSocketChannel.bind(new InetSocketAddress(7799));
+        //设置非阻塞
+        serverSocketChannel.configureBlocking(false);
+
+
+        //2.创建selector
+        Selector selector = Selector.open();
+        //将serversocketchannel注册到selector,并关注接收事件
+        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+
+        while (true) {
+            //3.select没有事件发生时，线程会阻塞，有事件发生时，线程往下执行
+            logger.info("blocking on select()........");
+            selector.select();
+
+            //4.获取所有发生事件的selectionkey
+            Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+            while (it.hasNext()) {
+                SelectionKey selectionKey = it.next();
+                //selector会在发生事件的时候向集合添加selectionKey,不会自动删除，需要手动删除
+                it.remove();
+                //事件处理
+                if (selectionKey.isAcceptable()) {
+                    ServerSocketChannel ssc = (ServerSocketChannel) selectionKey.channel();
+                    //接收新的客户端
+                    SocketChannel sc = ssc.accept();
+                    //设置非阻塞
+                    sc.configureBlocking(false);
+                    //注册到selector，并关注读事件,并分配一个缓冲区放到附件
+                    SelectionKey key = sc.register(selector, SelectionKey.OP_READ, ByteBuffer.allocate(4));
+                    logger.info("accept new client={}", key);
+                } else if (selectionKey.isReadable()) {
+                    try {
+                        SocketChannel channel = (SocketChannel) selectionKey.channel();
+                        //获取关联的附件
+                        ByteBuffer buffer = (ByteBuffer) selectionKey.attachment();
+                        int len = channel.read(buffer);
+                        //产生读事件，而长度是-1，表示客户端连接关闭，需要将注册的客户端移除
+                        if (-1 == len) {
+                            selectionKey.cancel();
+                        } else {
+                            split(buffer);
+                            if (buffer.position() == buffer.limit()) {
+                                ByteBuffer newBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
+                                buffer.flip();
+                                newBuffer.put(buffer);
+                                selectionKey.attach(newBuffer);
+                            }
+                        }
+
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        selectionKey.cancel();
+                    }
+                }
+            }
+        }
+    }
+
+
+    //切割信息
+    public static void split(ByteBuffer buffer) {
+        buffer.flip();
+        for (int i = 0; i < buffer.limit(); i++) {
+            //get(i) 仅仅获取内容，position不会变化
+            if (buffer.get(i) == '\n') {
+                //读取到\n，表示一个完整的语句，写入新buffer
+                int length = i + 1 - buffer.position();
+                ByteBuffer target = ByteBuffer.allocate(length);
+                for (int j = 0; j < target.limit(); j++) {
+                    //get() 获取当前position位置的数据，然后position会+1
+                    target.put(buffer.get());
+                }
+                byte[] bytes = new byte[length];
+                target.flip();
+                target.get(bytes);
+                logger.info("message:{}", new String(bytes));
+            }
+        }
+        buffer.compact();
+    }
+
+}
+
+
+
+
+
+
+
+
+---------------------------------------------------------- 注册/可读/可写事件 --------------------------------------------------------------------
+
+
+package com.example.netty.mynio;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
+import java.util.Iterator;
+
+public class NioServerWrite2 {
+
+    private static Logger logger = LoggerFactory.getLogger(NioServerWrite2.class);
+
+    public static void main(String[] args) throws IOException {
+
+        //1. 创建selector
+        Selector selector = Selector.open();
+
+        //2.创建服务端
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        serverSocketChannel.bind(new InetSocketAddress(7799)); //绑定端口
+        serverSocketChannel.configureBlocking(false);//设置非阻塞
+        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);//注册selector，并关注接收事件
+
+        while (true) {
+            //3. select无事件发生，则阻塞，有事件发生则向下运行
+            selector.select();
+            Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+            while (it.hasNext()) {
+                SelectionKey selectionKey = it.next();
+                //移除发生事件
+                it.remove();
+
+                //4. 处理事件
+                if (selectionKey.isAcceptable()) {
+                    //接收客户端
+                    ServerSocketChannel ssc = ServerSocketChannel.open();
+                    SocketChannel sc = ssc.accept();
+                    sc.configureBlocking(false);
+                    SelectionKey key = sc.register(selector, SelectionKey.OP_READ);
+
+                    StringBuffer sb = new StringBuffer();
+                    for (int i = 0; i < 500000; i++) {
+                        sb.append("a");
+                    }
+                    ByteBuffer bb = Charset.defaultCharset().encode(sb.toString());
+                    int len = sc.write(bb);
+                    logger.info("write len:{}", len);
+                    if (bb.hasRemaining()) {
+                        key.interestOps(key.interestOps() + SelectionKey.OP_WRITE);
+                        key.attach(bb);
+                    }
+                } else if (selectionKey.isReadable()) {
+                    try {
+                        SocketChannel sc = (SocketChannel) selectionKey.channel();
+                        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+                        int len = sc.read(byteBuffer);
+
+                        if (-1 == len) {
+                            selectionKey.cancel();
+                        } else {
+                            byte[] bytes = new byte[byteBuffer.limit()];
+                            byteBuffer.flip();
+                            byteBuffer.get(bytes);
+                            logger.info("读取到消息：{}", new String(bytes));
+                            byteBuffer.clear();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        selectionKey.cancel();
+                    }
+                } else if (selectionKey.isWritable()) {
+                    ByteBuffer bb = (ByteBuffer) selectionKey.attachment();
+                    SocketChannel sc = (SocketChannel) selectionKey.channel();
+                    int len = sc.write(bb);
+                    logger.info("write len :{}",len);
+                    if (!bb.hasRemaining()) {
+                        selectionKey.attach(null);
+                        selectionKey.interestOps(selectionKey.interestOps() - selectionKey.OP_WRITE);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+--------------------------------------------------------------bossSelector + workSelector-------------------------------------------------------------------------
+
+
+package com.example.netty.mynio;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.sql.rowset.serial.SerialBlob;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+public class NioServer3 {
+
+    private static Logger logger = LoggerFactory.getLogger(NioServer3.class);
+
+    public static void main(String[] args) throws IOException {
+
+        //1. boss selector
+        Selector bossSelector = Selector.open();
+
+        //2.服务端channel
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        serverSocketChannel.bind(new InetSocketAddress(7799));  //监听端口
+        serverSocketChannel.configureBlocking(false); //设置非阻塞
+        serverSocketChannel.register(bossSelector, SelectionKey.OP_ACCEPT); //注册到boss selector,并监听接收事件
+
+        //3.创建work
+        Work work = new Work();
+
+
+        while (true) {
+            //4. boss监听事件的发生
+            logger.info("bossSelector select() ---------------");
+            bossSelector.select();
+            Iterator<SelectionKey> it = bossSelector.selectedKeys().iterator();
+            while (it.hasNext()) {
+                SelectionKey selectionKey = it.next();
+                it.remove();
+                if (selectionKey.isAcceptable()) {
+                    logger.info("bossSelector accept new client-------------");
+                    ServerSocketChannel ssc = (ServerSocketChannel) selectionKey.channel();
+                    SocketChannel socketChannel = ssc.accept();
+                    socketChannel.configureBlocking(false);
+
+
+                    //5.将新连接的socketchannel交给work处理
+                    logger.info("new client will register to workSelector----------");
+                    work.register("work-1", socketChannel);
+                    logger.info("new client already register to workSelector----------");
+                }
+            }
+        }
+    }
+
+    private static class Work implements Runnable {
+
+        private Thread thread;
+        private Selector workSelector;
+        private String name;
+        private volatile boolean flag = false;
+        private ConcurrentLinkedQueue<Runnable> queue;
+        private SocketChannel socketChannel;
+
+        public void register(String name, SocketChannel socketChannel) throws IOException {
+            if (!flag) {
+                queue = new ConcurrentLinkedQueue<Runnable>();
+                workSelector = Selector.open();
+                this.name = name;
+                thread = new Thread(this);
+                thread.start();
+            }
+            //添加进队列
+            queue.add(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        socketChannel.register(workSelector, SelectionKey.OP_READ);
+                    } catch (ClosedChannelException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            //唤醒
+            workSelector.wakeup();
+        }
+
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    logger.info("workSelector select()------------");
+                    workSelector.select();
+                    //取出队列的，进行执行
+                    Runnable runnable = queue.poll();
+                    if (runnable != null) {
+                        runnable.run();
+                    }
+
+                    Iterator<SelectionKey> it = workSelector.selectedKeys().iterator();
+                    while (it.hasNext()) {
+                        SelectionKey key = it.next();
+                        it.remove();
+                        if (key.isReadable()) {
+                            ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+                            SocketChannel sc = (SocketChannel) key.channel();
+                            int len = sc.read(byteBuffer);
+                            if (-1 == len) {
+                                key.cancel();
+                            } else {
+                                byte[] bytes = new byte[len];
+                                byteBuffer.flip();
+                                byteBuffer.get(bytes);
+                                logger.info("work={},key={},thread={},data={}", name, key, Thread.currentThread().getName(), new String(bytes));
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+------------------------------------------客户端---------------------------------------------------------------
+public class Client1 {
+    private static Logger logger = LoggerFactory.getLogger(Client1.class);
+
+    public static void main(String[] args) throws IOException {
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.connect(new InetSocketAddress("localhost", 7799));
+        
+        //        int len = 0;
+//        while (true) {
+//            ByteBuffer byteBuffer = ByteBuffer.allocate(1024*1024);
+//            len = len + socketChannel.read(byteBuffer);
+//            logger.info("length:{}", len);
+//        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
